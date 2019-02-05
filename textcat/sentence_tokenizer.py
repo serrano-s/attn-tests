@@ -4,7 +4,7 @@ from overrides import overrides
 
 from allennlp.data.tokenizers.token import Token
 from allennlp.data.tokenizers.tokenizer import Tokenizer
-from .sentence_splitter import SentenceSplitter
+from .sentence_splitter import SpacySentenceSplitter
 
 
 @Tokenizer.register("sentence")
@@ -34,7 +34,7 @@ class SentenceTokenizer(Tokenizer):
         If given, these tokens will be added to the end of every string we tokenize.
     """
     def __init__(self) -> None:
-        self._sentence_splitter = SentenceSplitter()
+        self._sentence_splitter = SpacySentenceSplitter()
 
     @overrides
     def tokenize(self, text: str) -> List[Token]:

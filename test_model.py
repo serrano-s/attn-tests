@@ -21,6 +21,7 @@ from attn_tests_lib import load_attn_dists, load_log_unnormalized_attn_dists
 from attn_tests_lib import IntermediateBatchIterator
 import json
 from plain_model_test import evaluate
+from allennlp.common.util import import_submodules
 from random import shuffle
 import pickle
 from copy import deepcopy
@@ -939,7 +940,6 @@ def get_first_v_second_stats(classifier, attn_weight_filename, corr_vector_dir, 
 def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, attn_weight_filename,
                                          unchanged_results_filename, test_data_file):
     test_generator = test_iterator(test_data._read(test_data_file),
-                                   epoch_num=14,
                                    num_epochs=1,
                                    shuffle=False)
     num_test_batches = test_iterator.get_num_batches(test_data)
@@ -1085,6 +1085,8 @@ def main():
 
     parser.add_argument("--gpu", type=int, required=False, default=-1,
                         help="Which GPU device to run the testing on")
+    parser.add_argument("--optional-folder-tag", type=str, required=False, default='',
+                        help='Tag to tack onto output folder')
     parser.add_argument("--base-serialized-models-dir", type=str, required=False,
                         default="/homes/gws/sofias6/models/",
                         help="The dir to prepend to --model-folder-name")
@@ -1122,6 +1124,10 @@ def main():
         args.model_folder_name += '/'
     assert os.path.isdir(args.base_output_dir)
     output_dir = args.base_output_dir + args.model_folder_name
+    if args.optional_folder_tag != '':
+        output_dir = output_dir[:-1] + '-' + args.optional_folder_tag
+    if not output_dir.endswith('/'):
+        output_dir += '/'
     args.attn_weight_filename = output_dir + attn_layer_to_replace + '_' + args.attn_weight_filename
     args.model_folder_name = args.base_serialized_models_dir + args.model_folder_name
     args.test_data_file = args.base_data_dir + args.test_data_file

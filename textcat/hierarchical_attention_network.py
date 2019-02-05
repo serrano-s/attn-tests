@@ -50,8 +50,8 @@ class HierarchicalAttentionNetwork(Model):
                  text_field_embedder: TextFieldEmbedder,
                  sentence_encoder: Seq2SeqEncoder,
                  document_encoder: Seq2SeqEncoder,
-                 word_attention: Seq2VecEncoder,
-                 sentence_attention: Seq2VecEncoder,
+                 word_attention: Seq2SeqEncoder,
+                 sentence_attention: Seq2SeqEncoder,
                  output_logit: FeedForward,
                  pre_sentence_encoder_dropout: float = 0.0,
                  pre_document_encoder_dropout: float = 0.0,
@@ -127,17 +127,19 @@ class HierarchicalAttentionNetwork(Model):
 
         # we encode each sentence with a seq2seq encoder on its words, then seq2vec encoder incorporating attention
         mask = get_text_field_mask({"tokens": tokens_}).float()
-        embedded_words = self._pre_word_encoder_dropout(embedded_words)
-        encoded_words = self._word_encoder(embedded_words, mask)
+        embedded_words = self._pre_sentence_encoder_dropout(embedded_words)
+        encoded_words = self._sentence_encoder(embedded_words, mask)
         sentence_repr = self._word_attention(encoded_words, mask)
+        sentence_repr = torch.sum(sentence_repr, 1)
         sentence_repr = sentence_repr.view(batch_size, max_num_sents, -1)
 
         # we encode each document with a seq2seq encoder on its sentences, then seq2vec encoder incorporating attention
-        sentence_repr = self._pre_sentence_encoder_dropout(sentence_repr)
-        encoded_sents = self._sentence_encoder(sentence_repr, sentence_level_mask)
+        sentence_repr = self._pre_document_encoder_dropout(sentence_repr)
+        encoded_sents = self._document_encoder(sentence_repr, sentence_level_mask)
         document_repr = self._sentence_attention(encoded_sents, sentence_level_mask)
+        document_repr = torch.sum(document_repr, 1)
 
-        label_logits = self._classification_layer(document_repr.view(batch_size, -1))
+        label_logits = self._output_logit(document_repr.view(batch_size, -1))
         label_probs = torch.nn.functional.softmax(label_logits, dim=-1)
 
         output_dict = {"label_logits": label_logits, "label_probs": label_probs}
