@@ -607,14 +607,25 @@ def write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name)
     just_the_model = model_folder_name[:-1]
     just_the_model = just_the_model[just_the_model.rfind('/') + 1:]
     just_the_model = just_the_model[just_the_model.index('-') + 1:]
+    just_the_dataset_name = model_folder_name[:-1]
+    if '/' in just_the_dataset_name:
+        just_the_dataset_name = just_the_dataset_name[just_the_dataset_name.rfind('/') + 1:]
+    if '-' in just_the_dataset_name:
+        just_the_dataset_name = just_the_dataset_name[:just_the_dataset_name.index('-')]
+        if just_the_dataset_name == '':
+            dataset_name = 'dataset'
+        else:
+            dataset_name = just_the_dataset_name
+    else:
+        dataset_name = 'dataset'
     if just_the_model.endswith('-train'):
-        output_file += 'allstate_train'
+        output_file += dataset_name + '_train'
         just_the_model = just_the_model[:just_the_model.rfind('-')]
     elif just_the_model.endswith('-dev'):
-        output_file += 'allstate_dev'
+        output_file += dataset_name + '_dev'
         just_the_model = just_the_model[:just_the_model.rfind('-')]
     else:
-        output_file += 'allstate_test'
+        output_file += dataset_name + '_test'
     output_file += '_attnperformancelabels_' + just_the_model + '.txt'
     with open(output_file, 'w') as f:
         for i in range(rows_where_grad_more_efficient.shape[0]):

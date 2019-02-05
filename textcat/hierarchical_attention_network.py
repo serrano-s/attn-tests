@@ -197,15 +197,12 @@ class HanAttention(Seq2VecEncoder):
         self._context_dot_product = torch.nn.Linear(context_vector_dim, 1, bias=False)
         self.vec_dim = self._mlp.weight.size(1)
 
-    @overrides
     def get_input_dim(self) -> int:
         return self.vec_dim
 
-    @overrides
     def get_output_dim(self) -> int:
         return self.vec_dim
 
-    @overrides
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor):  # pylint: disable=arguments-differ
         assert mask is not None
         batch_size, sequence_length, embedding_dim = tokens.size()

@@ -11,7 +11,8 @@ from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer
 from allennlp.data.tokenizers import Token
 from allennlp.common.checks import ConfigurationError
-from allennlp.data.tokenizers import Tokenizer, WordTokenizer, SentenceTokenizer
+from allennlp.data.tokenizers import Tokenizer, WordTokenizer
+from .sentence_tokenizer import SentenceTokenizer
 from allennlp.data.tokenizers.word_filter import StopwordFilter, PassThroughWordFilter
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name

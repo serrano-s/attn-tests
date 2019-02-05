@@ -1,3 +1,3 @@
 from .textcat_reader import TextCatReader
 from .hierarchical_attention_network import HierarchicalAttentionNetwork
-
+from .sentence_tokenizer import SentenceTokenizer

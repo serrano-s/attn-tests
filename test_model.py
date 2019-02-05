@@ -9,10 +9,10 @@ from allennlp.models.model import Model
 from allennlp.common import Params
 from allennlp.models import load_archive
 from allennlp.data.dataset_readers import DatasetReader
-from textcat import TextCatReader
 from allennlp.data.tokenizers import WordTokenizer
 from allennlp.data.tokenizers.word_filter import PassThroughWordFilter
 from allennlp.data.iterators import BasicIterator, DataIterator
+from textcat import TextCatReader
 from allennlp.data import Vocabulary
 import attn_tests_lib
 from allennlp.nn import util
