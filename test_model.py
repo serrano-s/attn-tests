@@ -530,7 +530,6 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
             except:
                 last_used_ind = None
         if last_used_ind is not None:
-            # could potentially repeat some ids, but at least ensures each instance is correctly labeled
             next_available_ind = last_used_ind + 1
 
     corr_output_yielder = iter(OriginalOutputDistIterator(original_output_filename))
@@ -543,6 +542,7 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
             continue  # we've already covered all the instances in this batch
         elif havent_found_start_yet:
             havent_found_start_yet = False
+            # could potentially repeat some ids, but at least ensures each instance is correctly labeled
             next_available_ind = starting_ind_of_batch
         starting_ind_of_batch += len(list_of_lens)
 
