@@ -155,7 +155,7 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV
     if LAST_IND_OF_OUTPUT_CLASSES is None:
         num_rand_ind_orders_sampled = (rand_stats.shape[1] - 2) // 6
-        assert num_rand_ind_orders_sampled == (rand_stats.shape[1] - 2) / 6, "Didn't divide evenly"
+        assert num_rand_ind_orders_sampled == (rand_stats.shape[1] - 2) / 6, "Didn't divide evenly: rand_stats.shape[1] was " + str(rand_stats.shape[1])
         EXTRACTED_SINGLE_ATTN_WEIGHT_END = EXTRACTED_SINGLE_ATTN_WEIGHT_START + num_rand_ind_orders_sampled - 1
         EXTRACTED_SINGLE_WEIGHT_KL_START = EXTRACTED_SINGLE_ATTN_WEIGHT_END + 1
         EXTRACTED_SINGLE_WEIGHT_KL_END = EXTRACTED_SINGLE_WEIGHT_KL_START + num_rand_ind_orders_sampled - 1

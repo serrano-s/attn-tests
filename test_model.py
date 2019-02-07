@@ -655,6 +655,10 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
             write_part_of_header_and_reorder('needed_to_rem_x_probmass_for_decflip_', 6, f, rand_result_list,
                                              reordered_pieces, dont_write_header=dont_write_header)
             if need_to_add_header_line:
+                f.write(',')
+            write_part_of_header_and_reorder('needed_to_rem_frac_x_for_decflip_', 7, f, rand_result_list,
+                                             reordered_pieces, dont_write_header=dont_write_header)
+            if need_to_add_header_line:
                 f.write('\n')
 
             prev_id = 0

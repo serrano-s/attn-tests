@@ -3,7 +3,8 @@
    "numpy_seed": 944,
    "pytorch_seed": 972,
    "dataset_reader": {
-        "type": "textcat",
+        "type": "textcat-attnlabel",
+        "model_folder_name": "hanrnn-postattnfix",
         "segment_sentences": true,
         "word_tokenizer": "word",
         "token_indexers": {
@@ -21,6 +22,7 @@
   "validation_data_path": "/homes/gws/sofias6/data/imdb_dev.tsv",
     "model": {
         "type": "han",
+        "calculate_f1": true,
         "pre_sentence_encoder_dropout": 0.44446746096594764,
         "pre_document_encoder_dropout": 0.22016423400055152,
         "text_field_embedder": {
@@ -60,7 +62,7 @@
         "output_logit": {
             "input_dim": 100,
             "num_layers": 1,
-            "hidden_dims": 10,
+            "hidden_dims": 2,
             "dropout": 0.2457355626352195,
             "activations": "linear"
         },

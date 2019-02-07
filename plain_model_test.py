@@ -2,6 +2,7 @@ from typing import Dict, Any, Iterable
 import argparse
 import logging
 import json
+from allennlp.training.metrics import F1Measure
 
 import torch
 import numpy as np
@@ -45,9 +46,15 @@ def evaluate(model: Model,
             batch = util.move_to_device(batch, cuda_device)
 
             output_dict = model(**batch)
-            output_matrix = output_dict['label_logits'].data.numpy()
+            if cuda_device == -1:
+                output_matrix = output_dict['label_logits'].data.numpy()
+            else:
+                output_matrix = output_dict['label_logits'].data.cpu().numpy()
             output_labels = np.argmax(output_matrix, axis=1)
-            true_labels = batch['label'].data.numpy()
+            if cuda_device == -1:
+                true_labels = batch['label'].data.numpy()
+            else:
+                true_labels = batch['label'].data.cpu().numpy()
             assert true_labels.shape[0] == output_labels.shape[0]
             for i in range(true_labels.shape[0]):
                 label_file.write(str(int(true_labels[i])) + ',')
@@ -86,7 +93,7 @@ def main():
                                type=str,
                                default="",
                                help='a JSON structure used to override the experiment configuration')
-    parser.add_argument('--include-package', type=str)
+    parser.add_argument('--include-package', type=str, default='')
     parser.add_argument('--archive-file', type=str)
     args = parser.parse_args()
     
@@ -107,17 +114,23 @@ def main():
     logging.getLogger('allennlp.nn.initializers').disabled = True
     logging.getLogger('allennlp.modules.token_embedders.embedding').setLevel(logging.INFO)
 
-    import_submodules(args.include_package)
+    if args.include_package.strip() != '':
+        import_submodules(args.include_package)
     import_submodules("attn_tests_lib")
     import_submodules("textcat")
 
-    with open(args.overrides, 'r') as f:
-        args.overrides = " ".join([l.strip() for l in f.readlines()])
+    if args.overrides != '':
+        with open(args.overrides, 'r') as f:
+            args.overrides = " ".join([l.strip() for l in f.readlines()])
     archive = load_archive(args.archive_file, args.cuda_device, args.overrides, args.weights_file)
     config = archive.config
     prepare_environment(config)
     model = archive.model
     model.eval()
+
+    if model._output_logit.get_output_dim() == 2:
+        model.calculate_f1 = True
+        model._f1 = F1Measure(1)
 
     validation_dataset_reader_params = config.pop('validation_dataset_reader', None)
     if validation_dataset_reader_params is not None:
@@ -131,6 +144,12 @@ def main():
     iterator_params = config.pop("validation_iterator", None)
     if iterator_params is None:
         iterator_params = config.pop("iterator")
+    new_param_dict = {'type': 'basic'}
+    if 'batch_size' in iterator_params.params:
+        new_param_dict['batch_size'] = iterator_params.params['batch_size']
+    if 'maximum_samples_per_batch' in iterator_params.params:
+        new_param_dict['maximum_samples_per_batch'] = iterator_params.params['maximum_samples_per_batch']
+    iterator_params.params = new_param_dict
     iterator = DataIterator.from_params(iterator_params)
     iterator.index_with(model.vocab)
 

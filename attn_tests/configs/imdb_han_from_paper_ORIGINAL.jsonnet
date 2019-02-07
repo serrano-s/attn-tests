@@ -1,8 +1,8 @@
 {
-    "random_seed": 9,
-    "numpy_seed": 289,
-    "pytorch_seed": 218,
-    "dataset_reader": {
+   "random_seed": 370,
+   "numpy_seed": 944,
+   "pytorch_seed": 972,
+   "dataset_reader": {
         "type": "textcat",
         "segment_sentences": true,
         "word_tokenizer": "word",
@@ -15,19 +15,19 @@
     },
   "datasets_for_vocab_creation": [],
   "vocabulary": {
-    "directory_path": "/homes/gws/sofias6/vocabs/amazon-lowercase-vocab-30its"
+    "directory_path": "/homes/gws/sofias6/vocabs/imdb-lowercase-vocab"
   },
-  "train_data_path": "/homes/gws/sofias6/data/amazon_train_remoutliers.tsv",
-  "validation_data_path": "/homes/gws/sofias6/data/amazon_dev.tsv",
+  "train_data_path": "/homes/gws/sofias6/data/imdb_train.tsv",
+  "validation_data_path": "/homes/gws/sofias6/data/imdb_dev.tsv",
     "model": {
         "type": "han",
-        "pre_sentence_encoder_dropout": 0.2013908211296795,
-        "pre_document_encoder_dropout": 0.40795360243243817,
+        "pre_sentence_encoder_dropout": 0.44446746096594764,
+        "pre_document_encoder_dropout": 0.22016423400055152,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
-                    "pretrained_file": "/homes/gws/sofias6/data/amazon_train_lowercase_embeddings.h5",
+                    "pretrained_file": "/homes/gws/sofias6/data/imdb_train_lowercase_embeddings.h5",
                     "embedding_dim": 200,
                     "trainable": true
                 }
@@ -60,8 +60,8 @@
         "output_logit": {
             "input_dim": 100,
             "num_layers": 1,
-            "hidden_dims": 5,
-            "dropout": 0.3709911916878279,
+            "hidden_dims": 10,
+            "dropout": 0.2457355626352195,
             "activations": "linear"
         },
         "initializer": [
@@ -76,23 +76,21 @@
     "iterator": {
         "type": "extended_bucket",
         "sorting_keys": [["sentences", "num_sentences"], ["tokens", "list_num_tokens"]],
-        "max_instances_in_memory": 1000000,
         "batch_size": 64,
-        "maximum_samples_per_batch": ["list_num_tokens", 9000],  // confirmed that this affects batch size
+        "maximum_samples_per_batch": ["list_num_tokens", 2000],  // confirmed that this affects batch size
         "biggest_batch_first": false
     },
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0005932610700762183
+            "lr": 0.0004
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
         "num_epochs": 15,
-        //"grad_norm": 10.0,
-        "grad_clipping": 50.0,
+        "grad_norm": 10.0,
         "patience": 5,
-        "cuda_device": 0,
+        "cuda_device": 2,
         "learning_rate_scheduler": {
             "type": "reduce_on_plateau",
             "factor": 0.5,

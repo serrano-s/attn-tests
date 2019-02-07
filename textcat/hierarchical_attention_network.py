@@ -57,7 +57,8 @@ class HierarchicalAttentionNetwork(Model):
                  pre_document_encoder_dropout: float = 0.0,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None,
-                 calculate_f1: bool = False) -> None:
+                 calculate_f1: bool = False,
+                 loss_class_weights: List[float] = ()) -> None:
         super().__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
@@ -72,10 +73,14 @@ class HierarchicalAttentionNetwork(Model):
 
         self._num_labels = vocab.get_vocab_size(namespace="labels")
         self._accuracy = CategoricalAccuracy()
-        self.calculate_f1 = calculate_f1
+        self.calculate_f1 = calculate_f1 or (self._output_logit.get_output_dim() == 2)
         if self.calculate_f1:
             self._f1 = F1Measure(1)
-        self._loss = torch.nn.CrossEntropyLoss()  # torch.cuda.FloatTensor([1, 3.65]))
+        if len(loss_class_weights) == 0:
+            self._loss = torch.nn.CrossEntropyLoss()
+        else:
+            assert len(loss_class_weights) == self._output_logit.get_output_dim()
+            self._loss = torch.nn.CrossEntropyLoss(torch.FloatTensor(loss_class_weights))  # [1, 3.65]
 
         initializer(self)
 

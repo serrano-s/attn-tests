@@ -47,7 +47,7 @@
         "output_logit": {
             "input_dim": 100,
             "num_layers": 1,
-            "hidden_dims": 10,
+            "hidden_dims": 5,
             "dropout": 0.3709911916878279,
             "activations": "linear"
         },

@@ -61,7 +61,7 @@
         "output_logit": {
             "input_dim": 100,
             "num_layers": 1,
-            "hidden_dims": 10,
+            "hidden_dims": 5,
             "dropout": 0.4,
             "activations": "linear"
         },
@@ -83,13 +83,12 @@
     },
      "trainer": {
         "optimizer": {
-            "type": "sgd",
-            "lr": 0.001,
-            "momentum": 0.9
+            "type": "adam",
+            "lr": 0.0004
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
-        "num_epochs": 15,
+        "num_epochs": 30,
         //"grad_norm": 10.0,
         "grad_clipping": 50.0,
         "patience": 5,
