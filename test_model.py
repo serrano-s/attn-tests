@@ -530,19 +530,25 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
             except:
                 last_used_ind = None
         if last_used_ind is not None:
+            # could potentially repeat some ids, but at least ensures each instance is correctly labeled
             next_available_ind = last_used_ind + 1
 
     corr_output_yielder = iter(OriginalOutputDistIterator(original_output_filename))
-    starting_ind_of_batch = 1 - batch_size
-    for batch_tup in tqdm(batch_iterator, desc="Calculating decision flip stats"):
-        starting_ind_of_batch += batch_size
-        if starting_ind_of_batch + batch_size <= next_available_ind:
+    starting_ind_of_batch = 1
+    havent_found_start_yet = True
+    for batch_tup in tqdm(batch_iterator, desc="Calculating decision flip and rand stats"):
+        list_of_lens = batch_tup[2]
+        if starting_ind_of_batch + len(list_of_lens) <= next_available_ind:
+            starting_ind_of_batch += len(list_of_lens)
             continue  # we've already covered all the instances in this batch
+        elif havent_found_start_yet:
+            havent_found_start_yet = False
+            next_available_ind = starting_ind_of_batch
+        starting_ind_of_batch += len(list_of_lens)
 
         lists_to_write_to_file = []
         rand_result_list = []
-        
-        list_of_lens = batch_tup[2]
+
         original_attn_weights = util.move_to_device(batch_tup[0], gpu)
         corr_vects = util.move_to_device(batch_tup[1], gpu)
 
@@ -662,13 +668,14 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
                 f.write('\n')
 
             prev_id = 0
-            for instance_list in tqdm(reordered_pieces, desc="Writing rand stats file st.w " + str(prev_id)):
+            for instance_list in reordered_pieces:
                 assert prev_id < instance_list[0]
                 prev_id = instance_list[0]
                 f.write(str(instance_list[0]) + ',')
                 for i in range(1, len(instance_list) - 1):
                     f.write(instance_list[i] + ',')
                 f.write(instance_list[-1] + '\n')
+
     print("Done writing decision-flip stats file.")
     print("Done writing rand-order stats file.")
     
