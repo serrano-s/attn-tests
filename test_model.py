@@ -690,7 +690,7 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
     num_neg_jsdivs = 0
     num_pos_kldivs = 0
     num_pos_jsdivs = 0
-    for batch_tup in tqdm(batch_iterator, desc="Calculating decision flip stats"):
+    for batch_tup in tqdm(batch_iterator, desc="Calculating rand nontop decision flip stats"):
         list_of_lens = batch_tup[2]
         original_attn_weights = util.move_to_device(batch_tup[0], gpu)
         corr_vects = util.move_to_device(batch_tup[1], gpu)
