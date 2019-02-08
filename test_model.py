@@ -624,7 +624,7 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
                         'needed_to_rem_frac_x_top_items_for_decflip,needed_to_rem_x_bottom_items_for_decflip,' +
                         'needed_to_rem_x_bottom_probmass_for_decflip,needed_to_rem_frac_x_bottom_items_for_decflip\n')
             prev_id = 0
-            for instance_list in tqdm(lists_to_write_to_file, desc="Writing dec flip stats file st.w " + str(prev_id)):
+            for instance_list in lists_to_write_to_file:
                 assert prev_id < instance_list[0]
                 prev_id = instance_list[0]
                 f.write(str(instance_list[0]) + ',' + instance_list[1] + ',' + instance_list[2] + ',' + instance_list[3] +
