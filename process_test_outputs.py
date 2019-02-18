@@ -7,6 +7,7 @@ from test_model import rand_results_fname  # this one also has variable-length f
 from test_model import unchanged_fname  # index this one last because its fields are of variable length
 from test_model import grad_based_stats_fname
 from test_model import dec_flip_rand_nontop_stats_fname
+from test_model import attn_div_from_unif_fname
 from statsmodels.sandbox.stats.runs import mcnemar
 import matplotlib.pyplot as plt
 import matplotlib
@@ -89,6 +90,9 @@ NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = 3
 NONTOP_RAND_ZEROED_WEIGHT = 4
 NONTOP_RAND_KL_DIV = 5
 NONTOP_RAND_JS_DIV = 6
+# starting attn_div_from_unif file: id,seq_len,kl_div_from_unif,js_div_from_unif
+ATTN_KL_DIV_FROM_UNIF = 3
+ATTN_JS_DIV_FROM_UNIF = 4
 
 
 image_directory = None
@@ -97,7 +101,7 @@ data_dir = None
 
 
 def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_results_filename, unchanged_filename,
-                       grad_based_stats_filename, dec_flip_rand_nontop_stats_filename):
+                       grad_based_stats_filename, dec_flip_rand_nontop_stats_filename, attn_div_from_unif_filename):
     print("Loading in raw CSV files")
     first_v_second = np.genfromtxt(first_v_second_filename, delimiter=',', skip_header=1)
     dec_flip_stats = np.genfromtxt(dec_flip_stats_filename, delimiter=',', skip_header=1)
@@ -105,6 +109,7 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
     unchanged = np.genfromtxt(unchanged_filename, delimiter=',', skip_header=1)
     grad_stats = np.genfromtxt(grad_based_stats_filename, delimiter=',', skip_header=1)
     nontop_stats = np.genfromtxt(dec_flip_rand_nontop_stats_filename, delimiter=',', skip_header=1)
+    attn_div_stats = np.genfromtxt(attn_div_from_unif_filename, delimiter=',', skip_header=1)
 
     if len(first_v_second.shape) == 1:
         first_v_second = np.reshape(first_v_second, (1, first_v_second.shape[0]))
@@ -152,7 +157,7 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         DEC_FLIP_ZERO_2NDHIGHESTGRAD, KL_DIV_ZERO_HIGHESTGRADMULT, JS_DIV_ZERO_HIGHESTGRADMULT, \
         DEC_FLIP_ZERO_HIGHESTGRADMULT, KL_DIV_ZERO_2NDHIGHESTGRADMULT, JS_DIV_ZERO_2NDHIGHESTGRADMULT, \
         DEC_FLIP_ZERO_2NDHIGHESTGRADMULT, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOP_RAND_ZEROED_WEIGHT, \
-        NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV
+        NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, ATTN_KL_DIV_FROM_UNIF, ATTN_JS_DIV_FROM_UNIF
     if LAST_IND_OF_OUTPUT_CLASSES is None:
         num_rand_ind_orders_sampled = (rand_stats.shape[1] - 2) // 6
         assert num_rand_ind_orders_sampled == (rand_stats.shape[1] - 2) / 6, "Didn't divide evenly: rand_stats.shape[1] was " + str(rand_stats.shape[1])
@@ -209,9 +214,13 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         NONTOP_RAND_KL_DIV = NONTOP_RAND_ZEROED_WEIGHT + 1
         NONTOP_RAND_JS_DIV = NONTOP_RAND_KL_DIV + 1
 
+        ATTN_KL_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + NONTOP_RAND_JS_DIV
+        ATTN_JS_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + 1
+
     print("Found " + str(LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) + " different output classes")
     print("Starting to concatenate data into one table")
-    data_table = np.concatenate([first_v_second, dec_flip_stats, rand_stats, unchanged, grad_stats, nontop_stats],
+    data_table = np.concatenate([first_v_second, dec_flip_stats, rand_stats, unchanged, grad_stats, nontop_stats,
+                                 attn_div_stats],
                                 axis=1)
     assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE_FOR_TESTING])[0]) == 0
     assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0]) == 0
@@ -220,7 +229,7 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
     assert not np.any(data_table[:, NEEDED_REM_BOTTOM_FRAC_X_FOR_DECFLIP] > 1)
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] > 1)
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] > 1)
-    assert data_table.shape[1] - 1 == NONTOP_RAND_JS_DIV
+    assert data_table.shape[1] - 1 == ATTN_JS_DIV_FROM_UNIF
     print()
     return data_table
 
@@ -602,8 +611,10 @@ def print_2x2_decflip_jointdist(vs_flipped_decision, top_flipped_decision, label
           str(only_top_flipped / table.shape[0]) + '\tonlyotherflipped:' + str(only_rand_flipped / table.shape[0]))
     
     
-def write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name):
-    output_file = '/homes/gws/sofias6/data/'
+def write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name, top_level_data_folder):
+    if not top_level_data_folder.endswith('/'):
+        top_level_data_folder += '/'
+    output_file = top_level_data_folder
     just_the_model = model_folder_name[:-1]
     just_the_model = just_the_model[just_the_model.rfind('/') + 1:]
     just_the_model = just_the_model[just_the_model.index('-') + 1:]
@@ -650,6 +661,9 @@ def main(constrain_to_guessed_label=None):
     parser.add_argument("--base-images-dir", type=str, required=False,
                         default='imgs/',
                         help="The directory in which to store any created plots or histograms")
+    parser.add_argument("--top-level-data-dir", type=str, required=False,
+                        default='/homes/gws/sofias6/data/',
+                        help='Top level dir containing data (some info will be written there)')
     args = parser.parse_args()
     if args.write_attnperf_labels.lower().startswith('t'):
         write_attnperf = True
@@ -680,7 +694,7 @@ def main(constrain_to_guessed_label=None):
         os.makedirs(dataset_output_directory)
     file_dir = base_output_dir + model_folder_name
     global first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname, data_dir, \
-        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname
+        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname
     data_dir = file_dir
     first_v_second_fname = file_dir + first_v_second_fname
     dec_flip_stats_fname = file_dir + dec_flip_stats_fname
@@ -688,8 +702,9 @@ def main(constrain_to_guessed_label=None):
     unchanged_fname = file_dir + unchanged_fname
     grad_based_stats_fname = file_dir + grad_based_stats_fname
     dec_flip_rand_nontop_stats_fname = file_dir + dec_flip_rand_nontop_stats_fname
+    attn_div_from_unif_fname = file_dir + attn_div_from_unif_fname
     table = load_in_data_table(first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname,
-                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname)
+                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname)
     if constrain_to_guessed_label is not None:
         table = table[table[:, ORIG_LABEL_GUESSED] == constrain_to_guessed_label]
 
@@ -755,7 +770,7 @@ def main(constrain_to_guessed_label=None):
     assert rows_where_grad_more_efficient.shape[0] == table.shape[0]
 
     if write_attnperf:
-        write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name)
+        write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name, args.top_level_data_dir)
         
     both_same = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP] ==
                            table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD])) + \
@@ -847,7 +862,7 @@ def test_js_divs():
         os.makedirs(dataset_output_directory)
     file_dir = base_output_dir + model_folder_name
     global first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname, data_dir, \
-        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname
+        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname
     data_dir = file_dir
     first_v_second_fname = file_dir + first_v_second_fname
     dec_flip_stats_fname = file_dir + dec_flip_stats_fname
@@ -855,8 +870,9 @@ def test_js_divs():
     unchanged_fname = file_dir + unchanged_fname
     grad_based_stats_fname = file_dir + grad_based_stats_fname
     dec_flip_rand_nontop_stats_fname = file_dir + dec_flip_rand_nontop_stats_fname
+    attn_div_from_unif_fname = file_dir + attn_div_from_unif_fname
     table = load_in_data_table(first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname,
-                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname)
+                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname)
 
     # make sure that test results didn't get garbled-- do a couple of quick tests
     if table.shape[0] > 10:

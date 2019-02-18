@@ -39,6 +39,21 @@ def load_log_unnormalized_attn_dists(attn_weight_filename):
     return attn_dists, corr_inds
 
 
+class AttentionIterator:
+    def __init__(self, attn_weight_filename, return_log_attn_vals=True):
+        self.attn_weight_filename = attn_weight_filename
+        self.return_log_attn_vals = return_log_attn_vals
+
+    def __iter__(self):
+        with open(self.attn_weight_filename, 'r') as f:
+            for line in f:
+                if line.strip() == '':
+                    continue
+                corr_ind, attn_vals = \
+                    get_corr_ind_and_attn_vals_out_of_line(line, return_log_attn_vals=self.return_log_attn_vals)
+                yield attn_vals
+
+
 class IntermediateBatchIterator:
     def __init__(self, attn_weight_filename, corr_vector_dir, batch_size, return_log_attn_vals=False,
                  also_return_grads=False):

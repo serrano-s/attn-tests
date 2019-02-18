@@ -19,6 +19,7 @@ from allennlp.nn import util
 from scipy.misc import logsumexp
 from attn_tests_lib import load_attn_dists, load_log_unnormalized_attn_dists
 from attn_tests_lib import IntermediateBatchIterator
+from attn_tests_lib import AttentionIterator
 import json
 from plain_model_test import evaluate
 from allennlp.common.util import import_submodules
@@ -43,6 +44,7 @@ dec_flip_stats_fname = "dec_flip_stats.csv"
 rand_results_fname = "rand_sample_stats.csv"
 grad_based_stats_fname = "grad_based_stats.csv"
 dec_flip_rand_nontop_stats_fname = "rand_nontop_decflipjs.csv"
+attn_div_from_unif_fname = "attn_div_from_uniform.csv"
 num_rand_samples_to_take = 5
 
 
@@ -316,7 +318,7 @@ def get_batch_size_max_samples_per_batch_from_config_file(config_filename):
     return batch_size, max_samples_per_batch, vocab_dir
 
 
-def get_entropy_of_dists(log_dists, lengths_of_dists):
+def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False):
     entropies = []
     for i in range(log_dists.shape[0]):
         log_dist = log_dists[i, :lengths_of_dists[i]]
@@ -325,13 +327,13 @@ def get_entropy_of_dists(log_dists, lengths_of_dists):
         total = np.sum(exp_dist)
         assert .98 < total < 1.02, str(exp_dist) + '\n' + str(np.sum(exp_dist)) + "\n" + str(log_dist)
         entropy = -1 * np.sum(log_dist * exp_dist)
-        if not entropy > -1e-10:
+        if (not suppress_warnings) and not entropy > -1e-10:
             print("Calculated an entropy of " + str(entropy))
         entropies.append(entropy)
     return entropies
 
 
-def get_kl_div_of_dists(log_dists, new_log_dists):
+def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     kl_divs = []
     for i in range(log_dists.shape[0]):
         log_dist = log_dists[i] - logsumexp(log_dists[i])
@@ -341,23 +343,45 @@ def get_kl_div_of_dists(log_dists, new_log_dists):
         assert .98 < np.sum(np.exp(new_log_dist)) < 1.02, str(np.exp(new_log_dist)) + '\n' + \
                                                           str(np.sum(np.exp(new_log_dist))) + '\n' + str(new_log_dist)
         kl_div = (np.exp(new_log_dist) * (new_log_dist - log_dist)).sum()
-        if not kl_div > -1e-10:
+        if (not suppress_warnings) and not kl_div > -1e-10:
             print("Calculated a kl div of " + str(kl_div))
         kl_divs.append(kl_div)
     return kl_divs
 
 
-def get_js_div_of_dists(log_dists, new_log_dists):
+def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     js_divs = []
     for i in range(log_dists.shape[0]):
-        p = np.reshape(log_dists[i], (1, log_dists.shape[1]))
-        q = np.reshape(new_log_dists[i], (1, log_dists.shape[1]))
+        p = log_dists[i] - logsumexp(log_dists[i])
+        p = np.reshape(p, (1, log_dists.shape[1]))
+        q = new_log_dists[i] - logsumexp(new_log_dists[i])
+        q = np.reshape(q, (1, log_dists.shape[1]))
         m = np.reshape(logsumexp(np.concatenate([p, q], axis=0), axis=0) - float(np.log(2)), (1, log_dists.shape[1]))
-        js_div = (get_kl_div_of_dists(m, p)[0] + get_kl_div_of_dists(m, q)[0]) / 2
-        if not js_div > -1e-10:
+        js_div = (get_kl_div_of_dists(m, p, suppress_warnings=suppress_warnings)[0] +
+                  get_kl_div_of_dists(m, q, suppress_warnings=suppress_warnings)[0]) / 2
+        if (not suppress_warnings) and not js_div > -1e-10:
             print("Calculated a js div of " + str(js_div))
         js_divs.append(js_div)
     return js_divs
+
+
+def get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename):
+    instance_info_list = []
+    attn_iterator = AttentionIterator(attn_weight_filename, return_log_attn_vals=True)
+    instance_ind = 0
+    for log_attn_dist in tqdm(iter(attn_iterator), desc="Calculating attn divs from unif"):
+        instance_ind += 1
+        num_attn_items = len(log_attn_dist)
+        corr_log_unif_dist = np.zeros(1, num_attn_items) + np.log([1 / num_attn_items])[0]
+        np_log_attn_dist = np.array([log_attn_dist])
+        kl_div = float(get_kl_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
+        js_div = float(get_js_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
+        instance_info_list.append((str(instance_ind), str(num_attn_items), str(kl_div), str(js_div)))
+    with open(attn_div_from_unif_filename, 'w') as f:
+        f.write("id,attn_seq_len,attn_kl_div_from_unif,attn_js_div_from_unif\n")
+        for info_list in instance_info_list:
+            f.write(info_list[0] + ',' + info_list[1] + ',' + info_list[2] + ',' + info_list[3] + '\n')
+    print("Done writing attn_div_from_unif stats.")
 
 
 def get_two_highest_and_inds(list_to_check):
@@ -1069,6 +1093,7 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
     rand_results_filename = output_dir + rand_results_fname
     grad_based_stats_filename = output_dir + grad_based_stats_fname
     dec_flip_rand_nontop_stats_filename = output_dir + dec_flip_rand_nontop_stats_fname
+    attn_div_from_unif_filename = output_dir + attn_div_from_unif_fname
     model, just_the_classifier = \
         load_testing_models_in_eval_mode_from_serialization_dir(s_dir, attn_weight_filename, corr_vector_dir,
                                                                 total_num_test_instances, training_config_filename,
@@ -1084,6 +1109,7 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
                              unchanged_results_filename, grad_based_stats_filename)
     get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                                        unchanged_results_filename, dec_flip_rand_nontop_stats_filename)
+    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename)
 
 
 def main():

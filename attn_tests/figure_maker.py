@@ -12,6 +12,7 @@ from test_model import rand_results_fname  # this one also has variable-length f
 from test_model import unchanged_fname  # index this one last because its fields are of variable length
 from test_model import grad_based_stats_fname
 from test_model import dec_flip_rand_nontop_stats_fname
+from test_model import attn_div_from_unif_fname
 from process_test_outputs import load_in_data_table, get_np_arr_of_one_attn_weight_per_instance
 from math import ceil
 from random import random
@@ -26,7 +27,8 @@ def get_filenames_for_subdir(mid_dir):
         mid_dir += '/'
     return base_output_dir + mid_dir + first_v_second_fname, base_output_dir + mid_dir + dec_flip_stats_fname, \
            base_output_dir + mid_dir + rand_results_fname, base_output_dir + mid_dir + unchanged_fname, \
-           base_output_dir + mid_dir + grad_based_stats_fname, base_output_dir + mid_dir + dec_flip_rand_nontop_stats_fname
+           base_output_dir + mid_dir + grad_based_stats_fname, base_output_dir + mid_dir + dec_flip_rand_nontop_stats_fname, \
+           base_output_dir + mid_dir + attn_div_from_unif_fname
 
 yahoo_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-hanrnn-postattnfix'))
 imdb_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('imdb-hanrnn-postattnfix'))
