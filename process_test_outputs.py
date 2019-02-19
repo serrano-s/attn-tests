@@ -649,6 +649,14 @@ def write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name,
     print("Successfully wrote attn performance labels to " + output_file)
     
     
+def softmax(arr, axis):
+    arr = arr - np.expand_dims(np.max(arr, axis=axis), axis)
+    arr = np.exp(arr)
+    ax_sum = np.expand_dims(np.sum(arr, axis=axis), axis)
+    p = arr / ax_sum
+    return p
+    
+    
 def compare_outputs_by_grad(table, model_folder_name):
     table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] > 0]
     table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] > 0]
