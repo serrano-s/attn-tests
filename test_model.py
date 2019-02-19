@@ -372,7 +372,7 @@ def get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filena
     for log_attn_dist in tqdm(iter(attn_iterator), desc="Calculating attn divs from unif"):
         instance_ind += 1
         num_attn_items = len(log_attn_dist)
-        corr_log_unif_dist = np.zeros(1, num_attn_items) + np.log([1 / num_attn_items])[0]
+        corr_log_unif_dist = np.zeros((1, num_attn_items), dtype=float) + np.log([1 / num_attn_items])[0]
         np_log_attn_dist = np.array([log_attn_dist])
         kl_div = float(get_kl_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
         js_div = float(get_js_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
