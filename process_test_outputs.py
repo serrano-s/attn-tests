@@ -748,18 +748,24 @@ def write_files_of_fracremoved_vs_attndiv(table, model_folder_name, seq_len_grea
         model_folder_name += '/'
     kl_file = model_folder_name + "seqlengreaterthan" + str(seq_len_greater_than) + "_attnfracremoved_attnunifkldiv.txt"
     js_file = model_folder_name + "seqlengreaterthan" + str(seq_len_greater_than) + "_attnfracremoved_attnunifjsdiv.txt"
-    table = table[table[ATTN_SEQ_LEN] > seq_len_greater_than]
+    table = table[table[:, ATTN_SEQ_LEN] > seq_len_greater_than]
     attn_frac_removed_col = table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP]
     kl_col = table[:, ATTN_KL_DIV_FROM_UNIF]
     js_col = table[:, ATTN_JS_DIV_FROM_UNIF]
     num_instances = table.shape[0]
     with open(kl_file, 'w') as f:
         for i in range(num_instances):
-            f.write(str(float(attn_frac_removed_col[i])) + ',')
+            if attn_frac_removed_col[i] > 0:
+                f.write(str(float(attn_frac_removed_col[i])) + ',')
+            else:
+                f.write('1.0,')
             f.write(str(float(kl_col[i])) + '\n')
     with open(js_file, 'w') as f:
         for i in range(num_instances):
-            f.write(str(float(attn_frac_removed_col[i])) + ',')
+            if attn_frac_removed_col[i] > 0:
+                f.write(str(float(attn_frac_removed_col[i])) + ',')
+            else:
+                f.write('1.0,')
             f.write(str(float(js_col[i])) + '\n')
 
 
