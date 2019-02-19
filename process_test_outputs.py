@@ -743,6 +743,41 @@ def compare_outputs_by_attndecflip(table, model_folder_name):
             f.write(str(float(dc_output_diffs[i])) + '\n')
 
 
+def write_files_of_fracremoved_vs_attndiv(table, model_folder_name, seq_len_greater_than):
+    if not model_folder_name.endswith('/'):
+        model_folder_name += '/'
+    kl_file = model_folder_name + "seqlengreaterthan" + str(seq_len_greater_than) + "_attnfracremoved_attnunifkldiv.txt"
+    js_file = model_folder_name + "seqlengreaterthan" + str(seq_len_greater_than) + "_attnfracremoved_attnunifjsdiv.txt"
+    table = table[table[ATTN_SEQ_LEN] > seq_len_greater_than]
+    attn_frac_removed_col = table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP]
+    kl_col = table[:, ATTN_KL_DIV_FROM_UNIF]
+    js_col = table[:, ATTN_JS_DIV_FROM_UNIF]
+    num_instances = table.shape[0]
+    with open(kl_file, 'w') as f:
+        for i in range(num_instances):
+            f.write(str(float(attn_frac_removed_col[i])) + ',')
+            f.write(str(float(kl_col[i])) + '\n')
+    with open(js_file, 'w') as f:
+        for i in range(num_instances):
+            f.write(str(float(attn_frac_removed_col[i])) + ',')
+            f.write(str(float(js_col[i])) + '\n')
+
+
+def grad_more_efficient_attn_uniformity_test(table, mask_where_grad_more_efficient):
+    # done by looking at JS divergence of attention from uniform.
+    grad_divs = table[:, ATTN_JS_DIV_FROM_UNIF][mask_where_grad_more_efficient]
+    other_divs = table[:, ATTN_JS_DIV_FROM_UNIF][np.logical_not(mask_where_grad_more_efficient)]
+    grad_div_mean = np.mean(grad_divs)
+    other_divs_mean = np.mean(other_divs)
+    print("Mean attn-from-unif JS divs:   Grad-more-efficient instances:" + str(grad_div_mean) +
+          "   All others:" + str(other_divs_mean))
+    if grad_div_mean >= other_divs_mean:
+        print("Means already contradict hypothesis; not bothering to run McNemar's.")
+    else:
+        run_mcnemars_test(list(grad_divs), list(other_divs),
+                          'attn-unif JS divs being lower for gme instances than others')
+
+
 def main(constrain_to_guessed_label=None):
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -805,6 +840,9 @@ def main(constrain_to_guessed_label=None):
     compare_outputs_by_grad(table, file_dir)
     compare_outputs_by_attndecflip(table, file_dir)
 
+    write_files_of_fracremoved_vs_attndiv(table, file_dir, 1)
+    write_files_of_fracremoved_vs_attndiv(table, file_dir, 5)
+
     # make sure that test results didn't get garbled-- do a couple of quick tests
     if table.shape[0] > 10:
         assert int(np.sum(table[:, DEC_FLIP_ZERO_2NDHIGHESTGRADMULT] != table[:, DEC_FLIP_ZERO_2NDHIGHEST])) > 0
@@ -865,6 +903,8 @@ def main(constrain_to_guessed_label=None):
                        table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) ==
             grad_more_efficient)
     assert rows_where_grad_more_efficient.shape[0] == table.shape[0]
+
+    grad_more_efficient_attn_uniformity_test(table, rows_where_grad_more_efficient)
 
     if write_attnperf:
         write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name, args.top_level_data_dir)
