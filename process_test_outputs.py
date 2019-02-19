@@ -647,6 +647,92 @@ def write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name,
             else:
                 print("ERROR: found value " + str(rows_where_grad_more_efficient[i]) + " in rows_where_grad_more_efficient")
     print("Successfully wrote attn performance labels to " + output_file)
+    
+    
+def compare_outputs_by_grad(table, model_folder_name):
+    table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] > 0]
+    table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] > 0]
+    table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] < table[:, ATTN_SEQ_LEN]]
+    table = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] < table[:, ATTN_SEQ_LEN]]
+
+    grad_more_efficient = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] < table[:, NEEDED_REM_TOP_X_FOR_DECFLIP]]
+    gme_presoftmax_outputs = grad_more_efficient[:, STARTING_IND_OF_OUTPUT_CLASSES:LAST_IND_OF_OUTPUT_CLASSES + 1]
+    assert gme_presoftmax_outputs.shape[1] == 2
+    should_not_all_be_1 = np.sum(gme_presoftmax_outputs, axis=1)
+    all_really_close_to_1 = True
+    for i in range(should_not_all_be_1.shape[0]):
+        if should_not_all_be_1[i] < .98 or should_not_all_be_1[i] > 1.02:
+            all_really_close_to_1 = False
+            break
+    assert not all_really_close_to_1
+    gme_outputs = softmax(gme_presoftmax_outputs, axis=1)
+    gme_output_diffs = np.absolute(gme_outputs[:, 1] - gme_outputs[:, 0])
+
+    grad_less_efficient = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] > table[:, NEEDED_REM_TOP_X_FOR_DECFLIP]]
+    gle_presoftmax_outputs = grad_less_efficient[:, STARTING_IND_OF_OUTPUT_CLASSES:LAST_IND_OF_OUTPUT_CLASSES + 1]
+    assert gle_presoftmax_outputs.shape[1] == 2
+    should_not_all_be_1 = np.sum(gle_presoftmax_outputs, axis=1)
+    all_really_close_to_1 = True
+    for i in range(should_not_all_be_1.shape[0]):
+        if should_not_all_be_1[i] < .98 or should_not_all_be_1[i] > 1.02:
+            all_really_close_to_1 = False
+            break
+    assert not all_really_close_to_1
+    gle_outputs = softmax(gle_presoftmax_outputs, axis=1)
+    gle_output_diffs = np.absolute(gle_outputs[:, 1] - gle_outputs[:, 0])
+
+    if not model_folder_name.endswith('/'):
+        model_folder_name += '/'
+    gme_filename = model_folder_name + "grad_more_efficient_outputclass_absvaldiffs.txt"
+    gle_filename = model_folder_name + "grad_less_efficient_outputclass_absvaldiffs.txt"
+    with open(gme_filename, 'w') as f:
+        for i in range(gme_output_diffs.shape[0]):
+            f.write(str(float(gme_output_diffs[i])) + '\n')
+    with open(gle_filename, 'w') as f:
+        for i in range(gle_output_diffs.shape[0]):
+            f.write(str(float(gle_output_diffs[i])) + '\n')
+    
+    
+def compare_outputs_by_attndecflip(table, model_folder_name):
+    never_changed_mask = np.logical_or(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == -1,
+                                       table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == table[:, ATTN_SEQ_LEN])
+
+    never_changed = table[never_changed_mask]
+    nc_presoftmax_outputs = never_changed[:, STARTING_IND_OF_OUTPUT_CLASSES:LAST_IND_OF_OUTPUT_CLASSES + 1]
+    assert nc_presoftmax_outputs.shape[1] == 2
+    should_not_all_be_1 = np.sum(nc_presoftmax_outputs, axis=1)
+    all_really_close_to_1 = True
+    for i in range(should_not_all_be_1.shape[0]):
+        if should_not_all_be_1[i] < .98 or should_not_all_be_1[i] > 1.02:
+            all_really_close_to_1 = False
+            break
+    assert not all_really_close_to_1
+    nc_outputs = softmax(nc_presoftmax_outputs, axis=1)
+    nc_output_diffs = np.absolute(nc_outputs[:, 1] - nc_outputs[:, 0])
+
+    changed = table[np.logical_not(never_changed_mask)]
+    dc_presoftmax_outputs = changed[:, STARTING_IND_OF_OUTPUT_CLASSES:LAST_IND_OF_OUTPUT_CLASSES + 1]
+    assert dc_presoftmax_outputs.shape[1] == 2
+    should_not_all_be_1 = np.sum(dc_presoftmax_outputs, axis=1)
+    all_really_close_to_1 = True
+    for i in range(should_not_all_be_1.shape[0]):
+        if should_not_all_be_1[i] < .98 or should_not_all_be_1[i] > 1.02:
+            all_really_close_to_1 = False
+            break
+    assert not all_really_close_to_1
+    dc_outputs = softmax(dc_presoftmax_outputs, axis=1)
+    dc_output_diffs = np.absolute(dc_outputs[:, 1] - dc_outputs[:, 0])
+
+    if not model_folder_name.endswith('/'):
+        model_folder_name += '/'
+    nc_filename = model_folder_name + "neverchangedbyattn_outputclass_absvaldiffs.txt"
+    dc_filename = model_folder_name + "changedbyattn_outputclass_absvaldiffs.txt"
+    with open(nc_filename, 'w') as f:
+        for i in range(nc_output_diffs.shape[0]):
+            f.write(str(float(nc_output_diffs[i])) + '\n')
+    with open(dc_filename, 'w') as f:
+        for i in range(dc_output_diffs.shape[0]):
+            f.write(str(float(dc_output_diffs[i])) + '\n')
 
 
 def main(constrain_to_guessed_label=None):
@@ -707,6 +793,9 @@ def main(constrain_to_guessed_label=None):
                                grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname)
     if constrain_to_guessed_label is not None:
         table = table[table[:, ORIG_LABEL_GUESSED] == constrain_to_guessed_label]
+        
+    compare_outputs_by_grad(table, file_dir)
+    compare_outputs_by_attndecflip(table, file_dir)
 
     # make sure that test results didn't get garbled-- do a couple of quick tests
     if table.shape[0] > 10:
