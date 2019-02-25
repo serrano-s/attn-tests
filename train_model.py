@@ -502,7 +502,7 @@ def modify_param(param_set_to_modify, name_of_param, val):
         param_set_to_modify.params[name_of_param] = val
 
 
-def train_seq_models_reuse_iterator(base_filename, output_dir_base):
+def train_seq_models_reuse_iterator(base_filename, output_dir_base, gpu):
     processed_filenames = {}
     base_filename_prefix = base_filename[:base_filename.rfind('.')]
     filename_expression = base_filename_prefix + '*' + base_filename[base_filename.rfind('.'):]
@@ -555,6 +555,8 @@ def train_seq_models_reuse_iterator(base_filename, output_dir_base):
 
         if cur_config_filename is None:
             break
+
+        edit_config_file_to_have_gpu(cur_config_filename, gpu)
 
         progressing_ok = True
         try:
@@ -792,7 +794,7 @@ def main():
     edit_config_file_to_have_gpu(config_file, args.gpu)
 
     if args.train_multiple_models.lower().startswith('t'):
-        train_seq_models_reuse_iterator(config_file, output_dir)
+        train_seq_models_reuse_iterator(config_file, output_dir, args.gpu)
     elif args.continue_on_same_config_file or (not args.train_existing_model):
         print("Starting to train model from " + config_file)
         train_model_from_file(config_file, output_dir, recover=args.continue_on_same_config_file)
