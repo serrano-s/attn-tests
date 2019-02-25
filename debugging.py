@@ -1,5 +1,6 @@
 from typing import Dict, Iterable
 import logging
+import numpy as np
 
 from allennlp.common.checks import ConfigurationError, check_for_gpu
 from allennlp.common import Params
@@ -151,3 +152,67 @@ def print_params_at_depth(item, cur_depth: int, depth_cap: int):
                 print()
                 print_params_at_depth(item[key], cur_depth + 1, depth_cap)
 
+
+def calculate_nonlog_kl_divergence(from_dist, to_dist):
+    assert len(from_dist) == len(to_dist)
+    total = 0
+    for i in range(len(from_dist)):
+        total += to_dist[i] * np.log(to_dist[i] / from_dist[i])
+    return total
+
+
+def calculate_nonlog_js_divergence(from_dist, to_dist):
+    assert len(from_dist) == len(to_dist)
+    midpoint_dist = []
+    for i in range(len(from_dist)):
+        midpoint_dist.append((from_dist[i] + to_dist[i]) / 2)
+    return .5 * calculate_nonlog_kl_divergence(midpoint_dist, from_dist) + \
+           .5 * calculate_nonlog_kl_divergence(midpoint_dist, to_dist)
+
+
+def test_divergences():
+    dist_from = [.6, .3, .1]
+    dist_to = [.2, .4, .4]
+    dist_from_2 = [.7, .1, .2]
+    dist_to_2 = [.6, .3, .1]
+
+    print(dist_from)
+    print(dist_to)
+    print("Actual KL divergence: " + str(calculate_nonlog_kl_divergence(dist_from, dist_to)))
+    print("Actual JS divergence: " + str(calculate_nonlog_js_divergence(dist_from, dist_to)))
+    print()
+    print(dist_from_2)
+    print(dist_to_2)
+    print("Actual KL divergence: " + str(calculate_nonlog_kl_divergence(dist_from_2, dist_to_2)))
+    print("Actual JS divergence: " + str(calculate_nonlog_js_divergence(dist_from_2, dist_to_2)))
+    print()
+
+    log_dist_from = np.array([dist_from, dist_from_2])
+    log_dist_to = np.array([dist_to, dist_to_2])
+    log_dist_from = np.log(log_dist_from)
+    log_dist_to = np.log(log_dist_to)
+
+    kl_divs = get_kl_div_of_dists(log_dist_from, log_dist_to)
+    js_divs = get_js_div_of_dists(log_dist_from, log_dist_to)
+
+    print("Calculated KL divergence for dist 1: " + str(kl_divs[0]))
+    print("Calculated JS divergence for dist 1: " + str(js_divs[0]))
+    print("Calculated KL divergence for dist 2: " + str(kl_divs[1]))
+    print("Calculated JS divergence for dist 2: " + str(js_divs[1]))
+    print()
+
+    log_dist_from += 5
+    log_dist_to -= 7
+
+    kl_divs = get_kl_div_of_dists(log_dist_from, log_dist_to)
+    js_divs = get_js_div_of_dists(log_dist_from, log_dist_to)
+
+    print("Calculated KL divergence after adjusting log constant for dist 1: " + str(kl_divs[0]))
+    print("Calculated JS divergence after adjusting log constant for dist 1: " + str(js_divs[0]))
+    print("Calculated KL divergence after adjusting log constant for dist 2: " + str(kl_divs[1]))
+    print("Calculated JS divergence after adjusting log constant for dist 2: " + str(js_divs[1]))
+
+
+if __name__ == '__main__':
+    from test_model import get_kl_div_of_dists, get_js_div_of_dists
+    test_divergences()

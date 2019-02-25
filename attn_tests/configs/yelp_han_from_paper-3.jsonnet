@@ -1,7 +1,7 @@
 {
-    "random_seed": 9,
-    "numpy_seed": 289,
-    "pytorch_seed": 218,
+    "random_seed": 217,
+    "numpy_seed": 735,
+    "pytorch_seed": 781,
     "dataset_reader": {
         "type": "textcat",
         "segment_sentences": true,
@@ -15,21 +15,22 @@
     },
   "datasets_for_vocab_creation": [],
   "vocabulary": {
-    "directory_path": "/homes/gws/sofias6/vocabs/amazon-lowercase-vocab-30its"
+    "directory_path": "/homes/gws/sofias6/vocabs/yelp-lowercase-vocab-30its"
   },
-  "train_data_path": "/homes/gws/sofias6/data/amazon_train_remoutliers.tsv",
-  "validation_data_path": "/homes/gws/sofias6/data/amazon_dev.tsv",
+  "train_data_path": "/homes/gws/sofias6/data/yelp_train_remoutliers.tsv",
+  "validation_data_path": "/homes/gws/sofias6/data/yelp_dev.tsv",
     "model": {
         "type": "han",
-        "pre_sentence_encoder_dropout": 0.6,
         "pre_document_encoder_dropout": 0.2,
+        "pre_sentence_encoder_dropout": 0.5,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
-                    "pretrained_file": "/homes/gws/sofias6/data/amazon_train_lowercase_embeddings.h5",
+                    "pretrained_file": "/homes/gws/sofias6/data/yelp_train_lowercase_embeddings.h5",
                     "embedding_dim": 200,
-                    "trainable": true
+                    "trainable": true,
+                    "max_norm": 1.0
                 }
             }
         },
@@ -61,7 +62,7 @@
             "input_dim": 100,
             "num_layers": 1,
             "hidden_dims": 5,
-            "dropout": 0.4,
+            "dropout": 0.5,
             "activations": "linear"
         },
         "initializer": [
@@ -76,15 +77,14 @@
     "iterator": {
         "type": "extended_bucket",
         "sorting_keys": [["sentences", "num_sentences"], ["tokens", "list_num_tokens"]],
-        "max_instances_in_memory": 1000000,
         "batch_size": 64,
-        "maximum_samples_per_batch": ["list_num_tokens", 9000],  // confirmed that this affects batch size
+        "maximum_samples_per_batch": ["list_num_tokens", 6000],  // confirmed that this affects batch size
         "biggest_batch_first": false
     },
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0006
+            "lr": 0.001
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,

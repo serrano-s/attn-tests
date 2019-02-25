@@ -21,8 +21,8 @@
   "validation_data_path": "/homes/gws/sofias6/data/amazon_dev.tsv",
     "model": {
         "type": "han",
-        "pre_sentence_encoder_dropout": 0.6,
-        "pre_document_encoder_dropout": 0.2,
+        "pre_sentence_encoder_dropout": 0.5,
+        "pre_document_encoder_dropout": 0.1,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
@@ -61,7 +61,7 @@
             "input_dim": 100,
             "num_layers": 1,
             "hidden_dims": 5,
-            "dropout": 0.4,
+            "dropout": 0.5,
             "activations": "linear"
         },
         "initializer": [
@@ -84,7 +84,7 @@
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0006
+            "lr": 0.0001
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
