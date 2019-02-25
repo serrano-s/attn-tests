@@ -555,23 +555,45 @@ def train_seq_models_reuse_iterator(base_filename, output_dir_base):
 
         if cur_config_filename is None:
             break
-        params = Params.from_file(cur_config_filename, "")
 
-        for param_tup in copied_param_vals:
-            modify_param(params, param_tup[0], param_tup[1])
+        progressing_ok = True
+        try:
+            params = Params.from_file(cur_config_filename, "")
+        except:
+            print("Could not properly read params from " + cur_config_filename + "; skipping.")
+            progressing_ok = False
 
-        print("Starting to train model from " + cur_config_filename)
+        if progressing_ok:
+            try:
+                for param_tup in copied_param_vals:
+                    modify_param(params, param_tup[0], param_tup[1])
+            except:
+                print("Something went wrong while modifying params in " + cur_config_filename)
+                progressing_ok = False
 
-        cur_config_filename = cur_config_filename[:cur_config_filename.rfind('.')]
-        last_letters_to_take = len(cur_config_filename) - len(base_filename_prefix)
-        if last_letters_to_take > 0:
-            tag_to_append_to_dir = cur_config_filename[(-1 * last_letters_to_take):]
-        else:
-            tag_to_append_to_dir = ''
-        serialization_dir = output_dir_base + tag_to_append_to_dir
+        if progressing_ok:
+            print("Starting to train model from " + cur_config_filename)
 
-        train_model_given_params_and_iterators(params, serialization_dir, iterator, validation_iterator, vocab,
-                                               all_datasets, params_to_copy)
+        if progressing_ok:
+            try:
+                cur_config_filename = cur_config_filename[:cur_config_filename.rfind('.')]
+                last_letters_to_take = len(cur_config_filename) - len(base_filename_prefix)
+                if last_letters_to_take > 0:
+                    tag_to_append_to_dir = cur_config_filename[(-1 * last_letters_to_take):]
+                else:
+                    tag_to_append_to_dir = ''
+                serialization_dir = output_dir_base + tag_to_append_to_dir
+            except:
+                progressing_ok = False
+                print("Could not properly assemble a serialization directory")
+
+        if progressing_ok:
+            try:
+                train_model_given_params_and_iterators(params, serialization_dir, iterator,
+                                                       validation_iterator, vocab, all_datasets, params_to_copy)
+            except:
+                progressing_ok = False
+                print("Training model failed for some reason; skipping to next model.")
     print("Done processing all config files.")
 
 
