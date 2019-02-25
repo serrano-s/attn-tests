@@ -1101,8 +1101,8 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
                                                                 total_num_test_instances, training_config_filename,
                                                                 name_of_attn_layer_to_replace=attn_layer_to_replace,
                                                                 cuda_device=gpu)
-    """do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file)"""
+    do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
+                                         unchanged_results_filename, test_data_file)
     get_first_v_second_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                              unchanged_results_filename, first_v_second_filename)
     get_dec_flip_stats_and_rand(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
