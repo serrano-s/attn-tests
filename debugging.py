@@ -129,3 +129,25 @@ def debug_vocab(parameter_filename: str,
         is_padded = True
     print("labels will return True for is_padded: " + str(is_padded))
     print("Vocab's OOV token is in its labels dict (should be False): " + str(vocab_oov_token in vocab_labels_dict))
+
+
+def load_config_file_print_params(params_fname: str, param_depth: int = -1):
+    params = Params.from_file(params_fname)
+    print_params_at_depth(params, 1, depth_cap=param_depth)
+
+
+def print_params_at_depth(item, cur_depth: int, depth_cap: int):
+    if depth_cap != -1 and cur_depth > depth_cap:
+        return
+    tab_prepend = ''
+    if cur_depth >= 1:
+        tab_prepend = ''.join(['\t'] * (cur_depth - 1))
+    if isinstance(item, Params):
+        for key in item.keys():
+            print(tab_prepend + key, end='')
+            if not isinstance(item[key], Params):
+                print(" : " + str(item[key]))
+            else:
+                print()
+                print_params_at_depth(item[key], cur_depth + 1, depth_cap)
+

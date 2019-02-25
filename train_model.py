@@ -1,21 +1,21 @@
-import os
-from allennlp.commands.train import train_model_from_file, datasets_from_params, create_serialization_dir
-import argparse
-from allennlp.common.util import import_submodules, Params
-import allennlp.nn.util as util
 import argparse
 import logging
 import os
 import re
-import shutil
-
+from glob import glob
+from typing import Iterable, NamedTuple
 import torch
+from allennlp_internal_functions import dump_metrics, datasets_from_params, cleanup_global_logging, \
+                                        get_frozen_and_tunable_parameter_names
 
+from allennlp.commands.train import train_model_from_file, create_serialization_dir
+from allennlp.common.util import import_submodules
+import allennlp.nn.util as util
+from allennlp.data.instance import Instance
 from allennlp.commands.evaluate import evaluate
 from allennlp.common.checks import ConfigurationError, check_for_gpu
 from allennlp.common import Params
-from allennlp.common.util import prepare_environment, prepare_global_logging, \
-                                 get_frozen_and_tunable_parameter_names, dump_metrics
+from allennlp.common.util import prepare_environment, prepare_global_logging
 from allennlp.data import Vocabulary
 from allennlp.data.iterators.data_iterator import DataIterator
 from allennlp.models.archival import archive_model, CONFIG_NAME
@@ -197,15 +197,6 @@ def train_model_but_load_prev_model_weights(params: Params,
     for name, parameter in model.named_parameters():
         if any(re.search(regex, name) for regex in no_grad_regexes):
             parameter.requires_grad_(False)
-
-    frozen_parameter_names, tunable_parameter_names = \
-                   get_frozen_and_tunable_parameter_names(model)
-    logger.info("Following parameters are Frozen  (without gradient):")
-    for name in frozen_parameter_names:
-        logger.info(name)
-    logger.info("Following parameters are Tunable (with gradient):")
-    for name in tunable_parameter_names:
-        logger.info(name)
 
     trainer = Trainer.from_params(model=model,
                                   serialization_dir=serialization_dir,
@@ -409,15 +400,6 @@ def modified_train_model(serialization_dir,
         if any(re.search(regex, name) for regex in no_grad_regexes):
             parameter.requires_grad_(False)
 
-    frozen_parameter_names, tunable_parameter_names = \
-        get_frozen_and_tunable_parameter_names(model)
-    logger.info("Following parameters are Frozen  (without gradient):")
-    for name in frozen_parameter_names:
-        logger.info(name)
-    logger.info("Following parameters are Tunable (with gradient):")
-    for name in tunable_parameter_names:
-        logger.info(name)
-
     list_of_cur_optimizer_param_keys = [key for key in cur_optimizer_params.as_flat_dict().keys()]
     list_of_prev_optimizer_param_keys = [key for key in prev_optimizer_params.as_flat_dict().keys()]
     optimizer_params_match = True
@@ -505,6 +487,242 @@ def modified_train_model(serialization_dir,
     return best_model
 
 
+def get_config_filenames_matching(expression):
+    matching_filenames = list(glob(expression))
+    assert len(matching_filenames) > 0, "No matching config files found for " + str(expression)
+    return matching_filenames
+
+
+def modify_param(param_set_to_modify, name_of_param, val):
+    if val is None:
+        param_set_to_modify.pop(name_of_param, None)
+    else:
+        if isinstance(val, Params):
+            val = val.as_dict()
+        param_set_to_modify.params[name_of_param] = val
+
+
+def train_seq_models_reuse_iterator(base_filename, output_dir_base):
+    processed_filenames = {}
+    base_filename_prefix = base_filename[:base_filename.rfind('.')]
+    filename_expression = base_filename_prefix + '*' + base_filename[base_filename.rfind('.'):]
+    if os.path.isfile(base_filename):
+        params_to_pull_iterator_from = Params.from_file(base_filename, "")
+        params_for_copying = Params.from_file(base_filename, "")
+    else:
+        filename_to_pull = get_config_filenames_matching(filename_expression)[0]
+        params_to_pull_iterator_from = Params.from_file(filename_to_pull, "")
+        params_for_copying = Params.from_file(filename_to_pull, "")
+
+    all_datasets = datasets_from_params(params_to_pull_iterator_from)
+    datasets_for_vocab_creation = set(params_to_pull_iterator_from.pop("datasets_for_vocab_creation", all_datasets))
+
+    vocab = Vocabulary.from_params(
+        params_to_pull_iterator_from.pop("vocabulary", {}),
+        (instance for key, dataset in all_datasets.items()
+         for instance in dataset
+         if key in datasets_for_vocab_creation)
+    )
+
+    iterator = DataIterator.from_params(params_to_pull_iterator_from.pop("iterator"))
+    iterator.index_with(vocab)
+    validation_iterator_params = params_to_pull_iterator_from.pop("validation_iterator", None)
+    if validation_iterator_params:
+        validation_iterator = DataIterator.from_params(validation_iterator_params)
+        validation_iterator.index_with(vocab)
+    else:
+        validation_iterator = None
+
+    params_to_copy = [
+        "validation_iterator",
+        "vocabulary",
+        "iterator",
+        "dataset_reader",
+        "datasets_for_vocab_creation",
+        "train_data_path",
+        "validation_data_path"
+    ]
+    copied_param_vals = [(param_name, params_for_copying.pop(param_name, None)) for param_name in params_to_copy]
+
+    while True:
+        config_filenames = get_config_filenames_matching(filename_expression)
+        cur_config_filename = None
+        for config_filename in config_filenames:
+            if not config_filename in processed_filenames:
+                processed_filenames[config_filename] = 0
+                cur_config_filename = config_filename
+                break
+
+        if cur_config_filename is None:
+            break
+        params = Params.from_file(cur_config_filename, "")
+
+        for param_tup in copied_param_vals:
+            modify_param(params, param_tup[0], param_tup[1])
+
+        print("Starting to train model from " + cur_config_filename)
+
+        cur_config_filename = cur_config_filename[:cur_config_filename.rfind('.')]
+        last_letters_to_take = len(cur_config_filename) - len(base_filename_prefix)
+        if last_letters_to_take > 0:
+            tag_to_append_to_dir = cur_config_filename[(-1 * last_letters_to_take):]
+        else:
+            tag_to_append_to_dir = ''
+        serialization_dir = output_dir_base + tag_to_append_to_dir
+
+        train_model_given_params_and_iterators(params, serialization_dir, iterator, validation_iterator, vocab,
+                                               all_datasets, params_to_copy)
+    print("Done processing all config files.")
+
+
+class TrainerPieces(NamedTuple):
+    """
+        We would like to avoid having complex instantiation logic taking place
+        in `Trainer.from_params`. This helper class has a `from_params` that
+        instantiates a model, loads train (and possibly validation and test) datasets,
+        constructs a Vocabulary, creates data iterators, and handles a little bit
+        of bookkeeping. If you're creating your own alternative training regime
+        you might be able to use this.
+        """
+    model: Model
+    iterator: DataIterator
+    train_dataset: Iterable[Instance]
+    validation_dataset: Iterable[Instance]
+    test_dataset: Iterable[Instance]
+    validation_iterator: DataIterator
+    params: Params
+
+    def from_params(params: Params, iterator, val_iterator, vocab, all_datasets,
+                    serialization_dir: str, recover: bool = False) -> \
+            'TrainerPieces':
+        model = Model.from_params(vocab=vocab, params=params.pop('model'))
+
+        # Initializing the model can have side effect of expanding the vocabulary
+        vocab.save_to_files(os.path.join(serialization_dir, "vocabulary"))
+
+        train_data = all_datasets['train']
+        validation_data = all_datasets.get('validation')
+        test_data = all_datasets.get('test')
+
+        trainer_params = params.pop("trainer")
+        no_grad_regexes = trainer_params.pop("no_grad", ())
+        for name, parameter in model.named_parameters():
+            if any(re.search(regex, name) for regex in no_grad_regexes):
+                parameter.requires_grad_(False)
+
+        frozen_parameter_names, tunable_parameter_names = \
+            get_frozen_and_tunable_parameter_names(model)
+        logger.info("Following parameters are Frozen  (without gradient):")
+        for name in frozen_parameter_names:
+            logger.info(name)
+        logger.info("Following parameters are Tunable (with gradient):")
+        for name in tunable_parameter_names:
+            logger.info(name)
+
+        return TrainerPieces(model, iterator,
+                             train_data, validation_data, test_data,
+                             val_iterator, trainer_params)
+
+
+def train_model_given_params_and_iterators(params, serialization_dir, iterator, validation_iterator, vocab,
+                                           all_datasets, copied_but_unused_params,
+                                           file_friendly_logging: bool = False,
+                                           recover: bool = False,
+                                           force: bool = False
+                                           ):
+    """
+        Trains the model specified in the given :class:`Params` object, using the data and training
+        parameters also specified in that object, and saves the results in ``serialization_dir``.
+        Parameters
+        ----------
+        params : ``Params``
+            A parameter object specifying an AllenNLP Experiment.
+        serialization_dir : ``str``
+            The directory in which to save results and logs.
+        file_friendly_logging : ``bool``, optional (default=False)
+            If ``True``, we add newlines to tqdm output, even on an interactive terminal, and we slow
+            down tqdm's output to only once every 10 seconds.
+        recover : ``bool``, optional (default=False)
+            If ``True``, we will try to recover a training run from an existing serialization
+            directory.  This is only intended for use when something actually crashed during the middle
+            of a run.  For continuing training a model on new data, see the ``fine-tune`` command.
+        force : ``bool``, optional (default=False)
+            If ``True``, we will overwrite the serialization directory if it already exists.
+        Returns
+        -------
+        best_model: ``Model``
+            The model with the best epoch weights.
+        """
+    prepare_environment(params)
+    create_serialization_dir(params, serialization_dir, recover, force)
+    stdout_handler = prepare_global_logging(serialization_dir, file_friendly_logging)
+
+    cuda_device = params.params.get('trainer').get('cuda_device', -1)
+    check_for_gpu(cuda_device)
+
+    params.to_file(os.path.join(serialization_dir, CONFIG_NAME))
+
+    for param_name in copied_but_unused_params:
+        params.pop(param_name, None)
+
+    evaluate_on_test = params.pop_bool("evaluate_on_test", False)
+
+    trainer_type = params.get("trainer", {}).get("type", "default")
+
+    assert trainer_type == "default", "Trainer type is given as " + str(trainer_type)
+    # Special logic to instantiate backward-compatible trainer.
+
+    pieces = TrainerPieces.from_params(params, iterator, validation_iterator, vocab, all_datasets,
+                                       serialization_dir, recover)  # pylint: disable=no-member
+    trainer = Trainer.from_params(
+        model=pieces.model,
+        serialization_dir=serialization_dir,
+        iterator=pieces.iterator,
+        train_data=pieces.train_dataset,
+        validation_data=pieces.validation_dataset,
+        params=pieces.params,
+        validation_iterator=pieces.validation_iterator)
+    evaluation_iterator = pieces.validation_iterator or pieces.iterator
+    evaluation_dataset = pieces.test_dataset
+
+    params.assert_empty('base train command')
+
+    try:
+        metrics = trainer.train()
+    except KeyboardInterrupt:
+        # if we have completed an epoch, try to create a model archive.
+        if os.path.exists(os.path.join(serialization_dir, _DEFAULT_WEIGHTS)):
+            logging.info("Training interrupted by the user. Attempting to create "
+                         "a model archive using the current best epoch weights.")
+            archive_model(serialization_dir, files_to_archive=params.files_to_archive)
+        raise
+
+    # Evaluate
+    if evaluation_dataset and evaluate_on_test:
+        logger.info("The model will be evaluated using the best epoch weights.")
+        test_metrics = evaluate(trainer.model, evaluation_dataset, evaluation_iterator,
+                                cuda_device=trainer._cuda_devices[0],  # pylint: disable=protected-access,
+                                # TODO(brendanr): Pass in an arg following Joel's trainer refactor.
+                                batch_weight_key="")
+
+        for key, value in test_metrics.items():
+            metrics["test_" + key] = value
+
+    elif evaluation_dataset:
+        logger.info("To evaluate on the test set after training, pass the "
+                    "'evaluate_on_test' flag, or use the 'allennlp evaluate' command.")
+
+    if stdout_handler is not None:
+        cleanup_global_logging(stdout_handler)
+
+    # Now tar up results
+    archive_model(serialization_dir, files_to_archive=params.files_to_archive)
+    dump_metrics(os.path.join(serialization_dir, "metrics.json"), metrics, log=True)
+
+    # We count on the trainer to have the model with best weights
+    return trainer.model
+
+
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -516,19 +734,22 @@ def main():
                         choices=['amazon', 'yahoo10cat', 'yelp', 'imdb', 'whateverDatasetYouHaveInMind'])
     parser.add_argument("--gpu", type=int, required=True,
                         help="GPU to use (can supply -1 if not using GPU)")
+
+    parser.add_argument("--optional-model-tag", type=str, required=False, default='',
+                        help="Optional tag to append to end of model serialization dir")
+    parser.add_argument("--train-multiple-models", type=str, required=False, default='False',
+                        help="Whether to train multiple models on the same data, reusing the loaded iterator")
     parser.add_argument("--crashed-last-time", type=bool, required=False, default=False,
                         help="Whether we're resuming from a crashed run")
     parser.add_argument("--train-existing-model", type=bool, required=False, default=False,
                         help="Whether we're resuming from a preexisting model")
     parser.add_argument("--continue-on-same-config-file", type=bool, required=False, default=False,
                         help="Whether we're resuming from an interrupted run")
-    parser.add_argument("--optional-model-tag", type=str, required=False, default='',
-                        help="Optional tag to append to end of model serialization dir")
     parser.add_argument("--output-dir-base", required=False,
                         default="/homes/gws/sofias6/models/",
                         help="Which directory each individual model's serialization directory sits in")
     parser.add_argument("--dir-with-config-files", required=False,
-                        default="/homes/gws/sofias6/textcat/attn_tests/configs/",
+                        default="/homes/gws/sofias6/attn-tests/attn_tests/configs/",
                         help="Base directory for all config files")
     args = parser.parse_args()
     if not args.output_dir_base.endswith('/'):
@@ -547,11 +768,14 @@ def main():
 
     config_file = args.dir_with_config_files + args.dataset_name + corresponding_config_files[args.model]
     edit_config_file_to_have_gpu(config_file, args.gpu)
-    print("Starting to train model from " + config_file)
-    if args.continue_on_same_config_file or (not args.train_existing_model):
+
+    if args.train_multiple_models.lower().startswith('t'):
+        train_seq_models_reuse_iterator(config_file, output_dir)
+    elif args.continue_on_same_config_file or (not args.train_existing_model):
+        print("Starting to train model from " + config_file)
         train_model_from_file(config_file, output_dir, recover=args.continue_on_same_config_file)
     else:  # train existing model
-
+        print("Starting to train model from " + config_file)
         # figure out which output dir we should actually be using-- will have a number tacked on
         # to the end of it. figure out which one.
         assert os.path.isdir(output_dir)

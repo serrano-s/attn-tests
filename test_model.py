@@ -335,6 +335,8 @@ def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False):
 
 def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     kl_divs = []
+    mult_by = 1000000
+    log_mult_by = np.log(mult_by)
     for i in range(log_dists.shape[0]):
         log_dist = log_dists[i] - logsumexp(log_dists[i])
         new_log_dist = new_log_dists[i] - logsumexp(new_log_dists[i])
@@ -342,11 +344,11 @@ def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
                                                       '\n' + str(log_dist)
         assert .98 < np.sum(np.exp(new_log_dist)) < 1.02, str(np.exp(new_log_dist)) + '\n' + \
                                                           str(np.sum(np.exp(new_log_dist))) + '\n' + str(new_log_dist)
-        kl_div = (np.exp(new_log_dist) * (new_log_dist - log_dist)).sum()
+        kl_div = (np.exp(new_log_dist + log_mult_by) * (new_log_dist - log_dist)).sum()
         if (not suppress_warnings) and not kl_div > -1e-10:
             print("Calculated a kl div of " + str(kl_div))
         kl_divs.append(kl_div)
-    return kl_divs
+    return [i / mult_by for i in kl_divs]
 
 
 def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
@@ -1099,8 +1101,8 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
                                                                 total_num_test_instances, training_config_filename,
                                                                 name_of_attn_layer_to_replace=attn_layer_to_replace,
                                                                 cuda_device=gpu)
-    do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file)
+    """do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
+                                         unchanged_results_filename, test_data_file)"""
     get_first_v_second_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                              unchanged_results_filename, first_v_second_filename)
     get_dec_flip_stats_and_rand(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,

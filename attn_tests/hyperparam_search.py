@@ -15,7 +15,7 @@ from allennlp.common.checks import ConfigurationError, check_for_gpu
 from allennlp.common import Params
 from allennlp.common.util import prepare_environment
 from allennlp.common.util import prepare_global_logging
-from allennlp.common.util import dump_metrics
+from allennlp_internal_functions import dump_metrics
 from allennlp.data import Vocabulary
 from allennlp.data.iterators.data_iterator import DataIterator
 from allennlp.models.archival import archive_model, CONFIG_NAME
