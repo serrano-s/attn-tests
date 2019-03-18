@@ -335,33 +335,43 @@ def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False):
 
 def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     kl_divs = []
-    mult_by = 1000000
+    mult_by = 10
+    # calculate constants by which to adjust log distributions prior to logsumexp computation;
+    # these seem to put most distributions in a range where logsumexp works with reasonable precision
+    arr_of_vals_to_add_to_log_dists = 4 - (log_dists.sum(axis=1) / log_dists.shape[1])
+    arr_of_vals_to_add_to_new_log_dists = -10 - (new_log_dists.sum(axis=1) / new_log_dists.shape[1])
     log_mult_by = np.log(mult_by)
     for i in range(log_dists.shape[0]):
-        log_dist = log_dists[i] - logsumexp(log_dists[i])
-        new_log_dist = new_log_dists[i] - logsumexp(new_log_dists[i])
-        assert .98 < np.sum(np.exp(log_dist)) < 1.02, str(np.exp(log_dist)) + '\n' + str(np.sum(np.exp(log_dist))) + \
-                                                      '\n' + str(log_dist)
-        assert .98 < np.sum(np.exp(new_log_dist)) < 1.02, str(np.exp(new_log_dist)) + '\n' + \
-                                                          str(np.sum(np.exp(new_log_dist))) + '\n' + str(new_log_dist)
-        kl_div = (np.exp(new_log_dist + log_mult_by) * (new_log_dist - log_dist)).sum()
-        if (not suppress_warnings) and not kl_div > -1e-10:
+        log_dist = log_dists[i] - logsumexp(log_dists[i] + arr_of_vals_to_add_to_log_dists[i]) + \
+                   arr_of_vals_to_add_to_log_dists[i]
+        new_log_dist = new_log_dists[i] - logsumexp(new_log_dists[i] + arr_of_vals_to_add_to_new_log_dists[i]) + \
+                       arr_of_vals_to_add_to_new_log_dists[i]
+        new_log_dist_minus_log_dist = new_log_dist - log_dist
+        kl_div = (np.exp(new_log_dist + log_mult_by) * new_log_dist_minus_log_dist).sum()
+        kl_div = kl_div / mult_by
+        if (not suppress_warnings) and kl_div < 0:
             print("Calculated a kl div of " + str(kl_div))
         kl_divs.append(kl_div)
-    return [i / mult_by for i in kl_divs]
+    return kl_divs
 
 
 def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     js_divs = []
+    # calculate constants by which to adjust log distributions prior to logsumexp computation;
+    # these seem to put most distributions in a range where logsumexp works with reasonable precision
+    arr_of_vals_to_add_to_log_dists = 4 - (log_dists.sum(axis=1) / log_dists.shape[1])
+    arr_of_vals_to_add_to_new_log_dists = -10 - (new_log_dists.sum(axis=1) / new_log_dists.shape[1])
     for i in range(log_dists.shape[0]):
-        p = log_dists[i] - logsumexp(log_dists[i])
+        p = log_dists[i] - logsumexp(log_dists[i] + arr_of_vals_to_add_to_log_dists[i]) + \
+            arr_of_vals_to_add_to_log_dists[i]
         p = np.reshape(p, (1, log_dists.shape[1]))
-        q = new_log_dists[i] - logsumexp(new_log_dists[i])
+        q = new_log_dists[i] - logsumexp(new_log_dists[i] + arr_of_vals_to_add_to_new_log_dists[i]) + \
+            arr_of_vals_to_add_to_new_log_dists[i]
         q = np.reshape(q, (1, log_dists.shape[1]))
         m = np.reshape(logsumexp(np.concatenate([p, q], axis=0), axis=0) - float(np.log(2)), (1, log_dists.shape[1]))
         js_div = (get_kl_div_of_dists(m, p, suppress_warnings=suppress_warnings)[0] +
                   get_kl_div_of_dists(m, q, suppress_warnings=suppress_warnings)[0]) / 2
-        if (not suppress_warnings) and not js_div > -1e-10:
+        if (not suppress_warnings) and js_div < 0:
             print("Calculated a js div of " + str(js_div))
         js_divs.append(js_div)
     return js_divs

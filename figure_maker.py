@@ -32,20 +32,20 @@ def get_filenames_for_subdir(mid_dir):
 
 yahoo_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-hanrnn-postattnfix'))
 imdb_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('imdb-hanrnn-postattnfix'))
-amazon_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('amazon-hanrnn-postattnfix'))
-yelp_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('yelp-hanrnn-postattnfix-2'))
+amazon_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('amazon-hanrnn-fiveclassround2-4'))
+yelp_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('yelp-hanrnn-fiveclassround2-5smallerstep'))
 yahoo_hanconv_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-hanconv-convfix'))
 imdb_hanconv_table = load_in_data_table(*get_filenames_for_subdir('imdb-hanconv-convfix'))
-amazon_hanconv_table = load_in_data_table(*get_filenames_for_subdir('amazon-hanconv-convfix'))
-yelp_hanconv_table = load_in_data_table(*get_filenames_for_subdir('yelp-hanconv-convfix'))
+amazon_hanconv_table = load_in_data_table(*get_filenames_for_subdir('amazon-hanconv-fiveclass'))
+yelp_hanconv_table = load_in_data_table(*get_filenames_for_subdir('yelp-hanconv-fiveclass'))
 yahoo_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-flanrnn'))
 imdb_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('imdb-flanrnn'))
-amazon_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('amazon-flanrnn'))
-yelp_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('yelp-flanrnn-moreword2vec'))
+amazon_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('amazon-flanrnn-fiveclass'))
+yelp_flanrnn_table = load_in_data_table(*get_filenames_for_subdir('yelp-flanrnn-fiveclass'))
 yahoo_flanconv_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-flanconv-convfix'))
 imdb_flanconv_table = load_in_data_table(*get_filenames_for_subdir('imdb-flanconv-convfix'))
-amazon_flanconv_table = load_in_data_table(*get_filenames_for_subdir('amazon-flanconv-convfix'))
-yelp_flanconv_table = load_in_data_table(*get_filenames_for_subdir('yelp-flanconv-convfix'))
+amazon_flanconv_table = load_in_data_table(*get_filenames_for_subdir('amazon-flanconv-fiveclass'))
+yelp_flanconv_table = load_in_data_table(*get_filenames_for_subdir('yelp-flanconv-fiveclass'))
 
 from process_test_outputs import EXTRACTED_SINGLE_ATTN_WEIGHT_END, EXTRACTED_SINGLE_WEIGHT_KL_START, EXTRACTED_SINGLE_WEIGHT_KL_END, \
         EXTRACTED_SINGLE_WEIGHT_JS_START, EXTRACTED_SINGLE_WEIGHT_JS_END, NEEDED_REM_RAND_X_FOR_DECFLIP_START, \
@@ -64,7 +64,7 @@ from process_test_outputs import EXTRACTED_SINGLE_ATTN_WEIGHT_END, EXTRACTED_SIN
         DEC_FLIP_ZERO_2NDHIGHESTGRADMULT, EXTRACTED_SINGLE_ATTN_WEIGHT_START, DEC_FLIP_ZERO_HIGHEST, \
         JS_DIV_ZERO_HIGHEST, DEC_FLIP_ZERO_2NDHIGHEST, JS_DIV_ZERO_2NDHIGHEST, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, \
         NONTOP_RAND_ZEROED_WEIGHT, NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP, \
-        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP
+        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP, ATTN_SEQ_LEN, NEEDED_REM_TOP_X_FOR_DECFLIP, ID
 
 yahoo_han_mask = yahoo_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1
 imdb_han_mask = imdb_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1
@@ -95,10 +95,168 @@ yelp_flanconv_table = yelp_flanconv_table[yelp_flan_mask]
 assert LAST_IND_OF_OUTPUT_CLASSES is not None
 
 
+def get_inds_where_grad_more_efficient(table):
+    mask_for_seqs_longer_than_1_no_neg1s = (np.logical_and(np.logical_and(table[:, ATTN_SEQ_LEN] > 1,
+                                                                          table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] != -1),
+                                                           table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] != -1))
+    mask_for_seqs_longer_than_1_singleneg1 = (
+        np.logical_and(np.logical_xor(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == -1,
+                                      table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] == -1),
+                       table[:, ATTN_SEQ_LEN] > 1))
+    rows_where_grad_more_efficient = np.logical_or(np.logical_and(mask_for_seqs_longer_than_1_no_neg1s,
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] >
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]),
+                                                   np.logical_and(mask_for_seqs_longer_than_1_singleneg1,
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] <
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))
+    return table[rows_where_grad_more_efficient][:, ID]
+
+
+def get_intersection_of_ids(list_of_id_arrays):
+    if len(list_of_id_arrays) == 1:
+        return list_of_id_arrays[0]
+    else:
+        cur_intersection = list_of_id_arrays[-1]
+        for i in range(len(list_of_id_arrays) - 1):
+            cur_intersection = np.intersect1d(cur_intersection, list_of_id_arrays[i])
+        return cur_intersection
+
+
+def attn_perf_overlap_for_model(data_name):
+    namespace = __import__(__name__)
+    hanrnn_table = getattr(namespace, data_name + '_hanrnn_table')
+    hanconv_table = getattr(namespace, data_name + '_hanconv_table')
+    flanrnn_table = getattr(namespace, data_name + '_flanrnn_table')
+    flanconv_table = getattr(namespace, data_name + '_flanconv_table')
+
+    ids_to_remove_for_flans = np.setdiff1d(flanconv_table[:, ID], hanconv_table[:, ID])  # more than one token, but only one sentence
+    ids_to_remove_for_flans = ids_to_remove_for_flans
+    ids_to_keep_for_flans = np.setdiff1d(flanconv_table[:, ID], ids_to_remove_for_flans)
+    ids_to_keep_for_flans = ids_to_keep_for_flans.astype(int)
+    ids_to_keep_for_flans = np.sort(ids_to_keep_for_flans)
+    list_to_keep_for_flans = []
+    cur_ind_in_sorted = 0
+    for ind in range(flanconv_table.shape[0]):
+        if cur_ind_in_sorted < flanconv_table.shape[0] and flanconv_table[ind, 0] == ids_to_keep_for_flans[cur_ind_in_sorted]:
+            list_to_keep_for_flans.append(ind)
+            cur_ind_in_sorted += 1
+    ids_to_keep_for_flans = np.array(list_to_keep_for_flans)
+    flanconv_table = flanconv_table[ids_to_keep_for_flans]
+    flanrnn_table = flanrnn_table[ids_to_keep_for_flans]
+    assert flanconv_table.shape[0] == flanrnn_table.shape[0]
+    assert hanconv_table.shape[0] == flanrnn_table.shape[0]
+    assert hanrnn_table.shape[0] == hanconv_table.shape[0]
+
+    names = ['hanrnn', 'hanconv', 'flanrnn', 'flanconv']
+    ids_where_grad_better = [get_inds_where_grad_more_efficient(hanrnn_table),
+                             get_inds_where_grad_more_efficient(hanconv_table),
+                             get_inds_where_grad_more_efficient(flanrnn_table),
+                             get_inds_where_grad_more_efficient(flanconv_table)]
+
+    print('\n' + data_name + ' instances where attention provably not optimal:')
+    print("(FLANs now constrained down to same " + str(flanrnn_table.shape[0]) + " >1-sentence-len docs as HANs)")
+    for i in range(4):
+        if i == 0:
+            tab = hanrnn_table
+        elif i == 1:
+            tab = hanconv_table
+        elif i == 2:
+            tab = flanrnn_table
+        elif i == 3:
+            tab = flanconv_table
+        print(names[i] + " fraction bad: " + str(ids_where_grad_better[i].shape[0] /
+                                                 tab.shape[0]) + " (" +
+              str(ids_where_grad_better[i].shape[0]) + " / " + str(tab.shape[0]) + ")")
+
+    inds_in_all_4 = np.intersect1d(np.intersect1d(np.intersect1d(ids_where_grad_better[0],
+                                                                 ids_where_grad_better[1]),
+                                                  ids_where_grad_better[2]), ids_where_grad_better[3])
+    total_num_in_all_4 = inds_in_all_4.shape[0]
+    print("\t" + str(inds_in_all_4.shape[0]) + " instances bad in all 4 models")
+    for i in range(len(ids_where_grad_better)):
+        ids_where_grad_better[i] = np.setdiff1d(ids_where_grad_better[i], inds_in_all_4)
+    total_num_in_exactly_3 = 0
+    mini_strings_to_report = []
+    for i in range(len(ids_where_grad_better)):
+        lists_to_intersect = []
+        for j in range(len(ids_where_grad_better)):
+            if i == j:
+                continue
+            else:
+                lists_to_intersect.append(ids_where_grad_better[j])
+        inds_in_this_3 = get_intersection_of_ids(lists_to_intersect)
+        mini_strings_to_report.append("\t\t" + str(inds_in_this_3.shape[0]) + " instances bad in exactly non-" +
+                                      names[i] + " models")
+        total_num_in_exactly_3 += inds_in_this_3.shape[0]
+        for j in range(len(ids_where_grad_better)):
+            if i != j:
+                ids_where_grad_better[j] = np.setdiff1d(ids_where_grad_better[j], inds_in_this_3)
+    print("\t" + str(total_num_in_exactly_3) + " instances bad in exactly 3 models")
+    for st in mini_strings_to_report:
+        print(st)
+
+    total_num_in_exactly_2 = 0
+    mini_strings_to_report = []
+    for i in range(len(ids_where_grad_better)):
+        for j in range(len(ids_where_grad_better)):
+            if j <= i:
+                continue
+            inds_in_this_2 = get_intersection_of_ids([ids_where_grad_better[i], ids_where_grad_better[j]])
+            mini_strings_to_report.append("\t\t" + str(inds_in_this_2.shape[0]) + " instances bad in only " +
+                                          names[i] + " and " + names[j])
+            total_num_in_exactly_2 += inds_in_this_2.shape[0]
+            ids_where_grad_better[i] = np.setdiff1d(ids_where_grad_better[i], inds_in_this_2)
+            ids_where_grad_better[j] = np.setdiff1d(ids_where_grad_better[j], inds_in_this_2)
+    print("\t" + str(total_num_in_exactly_2) + " instances bad in exactly 2 models")
+    for st in mini_strings_to_report:
+        print(st)
+
+    total_num_in_exactly_1 = sum([arr.shape[0] for arr in ids_where_grad_better])
+    print("\t" + str(total_num_in_exactly_1) + " instances bad in exactly 1 model")
+    for i in range(len(ids_where_grad_better)):
+        print("\t\t" + str(ids_where_grad_better[i].shape[0]) + " instances bad only in " + names[i])
+    print("\t" + str(hanrnn_table.shape[0] - total_num_in_exactly_3 - total_num_in_exactly_1 -
+                     total_num_in_exactly_2 - total_num_in_all_4) + " instances never bad")
+    print()
+
+
+def get_predicted_probabilities(p1, p2, p3, p4):
+    prob_all_4 = p1 * p2 * p3 * p4
+    prob_exactly_3 = ((1 - p1) * p2 * p3 * p4) + (p1 * (1 - p2) * p3 * p4) + (p1 * p2 * (1 - p3) * p4) + \
+                     (p1 * p2 * p3 * (1 - p4))
+    list_of_probs = [p1, p2, p3, p4]
+    prob_exactly_2 = 0
+    for i in range(4):
+        for j in range(4):
+            if j <= i:
+                continue
+            other_inds = {0:0, 1:1, 2:2, 3:3}
+            del other_inds[i]
+            del other_inds[j]
+            other_inds = list(other_inds.keys())
+            prob_exactly_2 += (list_of_probs[i] * list_of_probs[j] * (1 - list_of_probs[other_inds[0]]) *
+                               (1 - list_of_probs[other_inds[1]]))
+    prob_exactly_1 = (p1 * (1 - p2) * (1 - p3) * (1 - p4)) + ((1 - p1) * p2 * (1 - p3) * (1 - p4)) + \
+    ((1 - p1) * (1 - p2) * p3 * (1 - p4)) + ((1 - p1) * (1 - p2) * (1 - p3) * p4)
+    prob_exactly_0 = ((1 - p1) * (1 - p2) * (1 - p3) * (1 - p4))
+    print("Prob all 4: " + str(prob_all_4))
+    print("Prob exactly 3: " + str(prob_exactly_3))
+    print("Prob exactly 2: " + str(prob_exactly_2))
+    print("Prob exactly 1: " + str(prob_exactly_1))
+    print("Prob never uninterpretable: " + str(prob_exactly_0))
+
+
+
+
+"""attn_perf_overlap_for_model('yahoo')
+attn_perf_overlap_for_model('imdb')
+attn_perf_overlap_for_model('amazon')
+attn_perf_overlap_for_model('yelp')"""
 
 
 try:
-    sns.set()
+    sns.set(font_scale=1.5)
+    sns.set_style("whitegrid")
 except:
     pass
 
@@ -339,10 +497,11 @@ def make_fracremoved_boxplots(filename, list_of_ordering_names, dataset_ordering
     ax.legend_.remove()
     sns.despine(offset=20, trim=True)
 
-    if 'conv' not in model:
-        plt.legend(loc='lower left', prop={'size': 10})
-    else:
-        plt.legend(loc='upper right', prop={'size': 10})
+    if ('han' in model or "HAN" in model) and 'rnn' in model:
+        if 'conv' not in model:
+            plt.legend(loc='lower left', prop={'size': 10})
+        else:
+            plt.legend(loc='upper right', prop={'size': 10})
     plt.savefig(filename, bbox_inches='tight')
     plt.close(fig)
 
@@ -366,7 +525,8 @@ def make_hists(filename, dataset_xval_tups,
 
     fig = plt.figure()
 
-    g = sns.FacetGrid(data_to_plot, col=title_of_each_graph, sharey=False, col_wrap=2)
+    g = sns.FacetGrid(data_to_plot, col=title_of_each_graph, sharey=False, col_wrap=2, aspect=1.5)
+    g.set(xticks=(np.arange(0.0, 1.2, 0.2)))
     g.map(sns.distplot, "Difference in Attention Weights", kde=False, rug=False)
 
     plt.savefig(filename, bbox_inches='tight')
@@ -394,12 +554,21 @@ def make_2x2_regression_set(tuples_of_title_x_y, filename, y_label="Log differen
             else:
                 print("Excluding a data point for " + y_label)
     data_to_plot = pd.DataFrame(list_of_row_dicts)
-    marker_format_dict = {'alpha': 0.15, 's': 2}
+    marker_format_dict = {'alpha': 0.3, 's': 2}
     if 'flip' in y_label:
         marker_format_dict["s"] = 10
-    g = sns.lmplot(x=x_label, y=y_label, col=title_of_each_graph, hue="AllTheSameInCol", palette=None,
-                   data = data_to_plot, col_wrap = 2, legend=False,
-                   scatter_kws=marker_format_dict, sharey=False, sharex=False)
+    print(data_to_plot.shape)
+    """g = sns.FacetGrid(data = data_to_plot,  col=title_of_each_graph, hue="AllTheSameInCol", palette=None,
+                    col_wrap = 2, sharey=False, sharex=False) #legend=False,
+                   #scatter_kws=marker_format_dict, )
+    g = g.map(plt.scatter, x=x_label, y=y_label, )"""
+
+    g = sns.FacetGrid(data_to_plot, col=title_of_each_graph, col_wrap=2, aspect=1.2)
+    g.map(plt.scatter, x_label, y_label, alpha=0.15, s=2)
+    g.set(xticks=(np.arange(0.0, 1.2, 0.2)))
+    plt.ylim(-0.05, 0.45)
+    plt.xlim(0, 1)
+
     print("Saving file to " + filename)
     plt.savefig(filename, bbox_inches='tight')
 
@@ -490,6 +659,11 @@ def make_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag=
                        yahoo_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][yahoo_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
                        yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
                        yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1])
+    yahoo_by_attn = list(yahoo_model_tup[2])
+    sorted_yahoo_by_attn = sorted(yahoo_by_attn)
+    print("Upper quartile of yahoo: " + str(sorted_yahoo_by_attn[3 * int(len(yahoo_by_attn) / 4)]))
+    print("Median of yahoo: " + str(sorted_yahoo_by_attn[int(len(yahoo_by_attn) / 2)]))
+    print("Lower quartile of yahoo: " + str(sorted_yahoo_by_attn[int(len(yahoo_by_attn) / 4)]))
     imdb_model_tup = ("IMDB",
                        imdb_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][imdb_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
                        imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
@@ -970,11 +1144,24 @@ def convert_to_log_and_print_how_many_were_originally_negative(js_model_tup, mod
     assert len(x_vals_going_with_ys.shape) > 0 and x_vals_going_with_ys.shape[0] > 0, x_vals_going_with_ys
     print(js_model_tup[0] + " " + model_label_to_print_with_report + ": " + str(np.sum(convert_to_log < 0)) +
           " out of " + str(convert_to_log.shape[0]) + " (" + str(np.sum(convert_to_log < 0) / convert_to_log.shape[0]) + ") JSdivdiffs were negative")
-    new_y_vals = np.log(convert_to_log - subtract_before_logging)
+    #new_y_vals = np.log(convert_to_log - subtract_before_logging)
+    new_y_vals = np.array(convert_to_log)
     if change_back_to_list:
         new_y_vals = list(new_y_vals)
     assert len(js_model_tup) == 3
-    return [js_model_tup[0], js_model_tup[1], new_y_vals], x_vals_going_with_ys
+
+    sorted_y_vals = sorted(list(new_y_vals), reverse=False)
+    only_accept_yvals_below = sorted_y_vals[-1]#[int(len(sorted_y_vals) * 0.99)]
+    new_y_vals = np.array(new_y_vals)
+    keep = (new_y_vals < only_accept_yvals_below)
+    new_y_vals = new_y_vals[keep]
+    x_vals = np.array(js_model_tup[1])
+    x_vals = x_vals[keep]
+    if change_back_to_list:
+        x_vals = list(x_vals)
+        new_y_vals = list(new_y_vals)
+
+    return [js_model_tup[0], x_vals, new_y_vals], x_vals_going_with_ys
 
 
 def wonkysample_so_xs_are_roughly_uniform_at_random(js_model_tup, sample_x):
@@ -1240,38 +1427,38 @@ def main():
     sample_x = 10
     assert yahoo_hanrnn_table.shape[1] == imdb_hanrnn_table.shape[1]
 
-    make_probmass_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
-                            amazon_tag='postattnfix', yelp_tag='postattnfix-2')
+    """make_probmass_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
+                            amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
     make_probmass_boxplots('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='convfix', yelp_tag='convfix')
-    make_probmass_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='moreword2vec')
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_probmass_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_probmass_boxplots('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='convfix', yelp_tag='convfix')
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')"""
 
     make_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
-                            amazon_tag='postattnfix', yelp_tag='postattnfix-2')
+                            amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
     make_boxplots('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='convfix', yelp_tag='convfix')
-    make_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='moreword2vec')
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_boxplots('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                                              amazon_tag='convfix', yelp_tag='convfix')
+                                              amazon_tag='fiveclass', yelp_tag='fiveclass')
 
-    make_decflip_regression_plot_vs2ndhighest('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
-                                              amazon_tag='postattnfix', yelp_tag='postattnfix-2')
+    """make_decflip_regression_plot_vs2ndhighest('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
+                                              amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
     make_decflip_regression_plot_vs2ndhighest('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                                              amazon_tag='convfix', yelp_tag='convfix')
-    make_decflip_regression_plot_vs2ndhighest('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='',
-                                              yelp_tag='moreword2vec')
+                                              amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_decflip_regression_plot_vs2ndhighest('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass',
+                                              yelp_tag='fiveclass')
     make_decflip_regression_plot_vs2ndhighest('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='convfix', yelp_tag='convfix')
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')"""
 
-    make_jsdiv_regression_plot('hanrnn', sample_x, yahoo_tag='postattnfix', imdb_tag='postattnfix', amazon_tag='postattnfix',
-                               yelp_tag='postattnfix-2')
+    make_jsdiv_regression_plot('hanrnn', sample_x, yahoo_tag='postattnfix', imdb_tag='postattnfix', amazon_tag='fiveclassround2-4',
+                               yelp_tag='fiveclassround2-5smallerstep')
     make_jsdiv_regression_plot('hanconv', sample_x, yahoo_tag='convfix', imdb_tag='convfix',
-                                              amazon_tag='convfix', yelp_tag='convfix')
-    make_jsdiv_regression_plot('flanrnn', sample_x, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='moreword2vec')
+                                              amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_jsdiv_regression_plot('flanrnn', sample_x, yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_jsdiv_regression_plot('flanconv', sample_x, yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='convfix', yelp_tag='convfix')
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
 
 
 if __name__ == '__main__':

@@ -15,14 +15,14 @@
     },
   "datasets_for_vocab_creation": [],
   "vocabulary": {
-    "directory_path": "/homes/gws/sofias6/vocabs/yelp-lowercase-vocab"
+    "directory_path": "/homes/gws/sofias6/vocabs/yelp-lowercase-vocab-30its"
   },
   "train_data_path": "/homes/gws/sofias6/data/yelp_train_remoutliers.tsv",
   "validation_data_path": "/homes/gws/sofias6/data/yelp_dev.tsv",
     "model": {
         "type": "han",
-        "pre_document_encoder_dropout": 0.3633964801928899,
-        "pre_sentence_encoder_dropout": 0.2934111055781058,
+        "pre_document_encoder_dropout": 0.1,
+        "pre_sentence_encoder_dropout": 0.7,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
@@ -57,7 +57,7 @@
             "input_dim": 100,
             "num_layers": 1,
             "hidden_dims": 5,
-            "dropout": 0.42604996839375936,
+            "dropout": 0.7,
             "activations": "linear"
         },
         "initializer": [
@@ -79,14 +79,14 @@
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0005037515992918302
+            "lr": 0.0001
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
-        "num_epochs": 15,
+        "num_epochs": 60,
         "grad_norm": 10.0,
         "patience": 5,
-        "cuda_device": 1,
+        "cuda_device": 0,
         "learning_rate_scheduler": {
             "type": "reduce_on_plateau",
             "factor": 0.5,

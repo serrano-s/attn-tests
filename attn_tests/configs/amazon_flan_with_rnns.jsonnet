@@ -21,7 +21,7 @@
   "validation_data_path": "/homes/gws/sofias6/data/amazon_dev.tsv",
     "model": {
         "type": "flan",
-        "pre_document_encoder_dropout": 0.40795360243243817,
+        "pre_document_encoder_dropout": 0.6,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
@@ -48,7 +48,7 @@
             "input_dim": 100,
             "num_layers": 1,
             "hidden_dims": 5,
-            "dropout": 0.3709911916878279,
+            "dropout": 0.4,
             "activations": "linear"
         },
         "initializer": [
@@ -71,11 +71,11 @@
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0005932610700762183
+            "lr": 0.0002
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
-        "num_epochs": 15,
+        "num_epochs": 60,
         //"grad_norm": 10.0,
         "grad_clipping": 50.0,
         "patience": 5,

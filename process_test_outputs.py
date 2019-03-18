@@ -186,8 +186,7 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         WEIGHT_1STLAST_RATIO += NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_END
         WEIGHT_1STLAST_ENTROPY += NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_END
         STARTING_IND_OF_OUTPUT_CLASSES += NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_END
-        LAST_IND_OF_OUTPUT_CLASSES = first_v_second.shape[1] + dec_flip_stats.shape[1] + rand_stats.shape[1] + \
-                                     unchanged.shape[1] - 1
+        LAST_IND_OF_OUTPUT_CLASSES = unchanged.shape[1] + NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_END
         ID_DUPLICATE += LAST_IND_OF_OUTPUT_CLASSES
         ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING = ID_DUPLICATE + 1
         NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD = ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING + 1
@@ -216,14 +215,27 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
 
         ATTN_KL_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + NONTOP_RAND_JS_DIV
         ATTN_JS_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + 1
+        print("Found " + str(
+            LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) + " different output classes")
+    elif LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1 > unchanged.shape[1] - 11:
+        # pad unchanged with columns of zeroes
+        print("Found " + str(unchanged.shape[1] - 11) + " different output classes")
+        num_cols_to_add = (LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) - (unchanged.shape[1] - 11)
+        padding_cols = np.zeros(shape=(unchanged.shape[0], num_cols_to_add))
+        unchanged = np.concatenate([unchanged, padding_cols], axis=1)
+    elif LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1 == unchanged.shape[1] - 11:
+        print("Found " + str(
+            LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) + " different output classes")
+    else:
+        print("ERROR: previous tables were loaded in with fewer output classes, which code is currently not equipped to handle.")
+        exit(1)
 
-    print("Found " + str(LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) + " different output classes")
     print("Starting to concatenate data into one table")
     data_table = np.concatenate([first_v_second, dec_flip_stats, rand_stats, unchanged, grad_stats, nontop_stats,
                                  attn_div_stats],
                                 axis=1)
     assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE_FOR_TESTING])[0]) == 0
-    assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0]) == 0
+    assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0]) == 0, str(len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0])) + ' / ' + str(data_table.shape[0]) + " don't match. First ten: " + str(data_table[:10, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])
     assert len(np.nonzero(data_table[:, ID] - data_table[:, ID_DUPLICATE])[0]) == 0
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] > 1)
     assert not np.any(data_table[:, NEEDED_REM_BOTTOM_FRAC_X_FOR_DECFLIP] > 1)
@@ -665,7 +677,7 @@ def compare_outputs_by_grad(table, model_folder_name):
 
     grad_more_efficient = table[table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] < table[:, NEEDED_REM_TOP_X_FOR_DECFLIP]]
     gme_presoftmax_outputs = grad_more_efficient[:, STARTING_IND_OF_OUTPUT_CLASSES:LAST_IND_OF_OUTPUT_CLASSES + 1]
-    assert gme_presoftmax_outputs.shape[1] == 2
+    assert gme_presoftmax_outputs.shape[1] == 2, str(gme_presoftmax_outputs.shape)
     should_not_all_be_1 = np.sum(gme_presoftmax_outputs, axis=1)
     all_really_close_to_1 = True
     for i in range(should_not_all_be_1.shape[0]):
@@ -780,8 +792,10 @@ def grad_more_efficient_attn_uniformity_test(table, mask_where_grad_more_efficie
     if grad_div_mean >= other_divs_mean:
         print("Means already contradict hypothesis; not bothering to run McNemar's.")
     else:
-        run_mcnemars_test(list(grad_divs), list(other_divs),
-                          'attn-unif JS divs being lower for gme instances than others')
+        pass
+        # data not paired, so this doesn't make sense
+        #run_mcnemars_test(list(grad_divs), list(other_divs),
+        #                  'attn-unif JS divs being lower for gme instances than others')
 
 
 def main(constrain_to_guessed_label=None):
@@ -843,8 +857,9 @@ def main(constrain_to_guessed_label=None):
     if constrain_to_guessed_label is not None:
         table = table[table[:, ORIG_LABEL_GUESSED] == constrain_to_guessed_label]
         
-    compare_outputs_by_grad(table, file_dir)
-    compare_outputs_by_attndecflip(table, file_dir)
+    if LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES == 2:
+        compare_outputs_by_grad(table, file_dir)
+        compare_outputs_by_attndecflip(table, file_dir)
 
     write_files_of_fracremoved_vs_attndiv(table, file_dir, 1)
     write_files_of_fracremoved_vs_attndiv(table, file_dir, 5)

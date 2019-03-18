@@ -172,42 +172,58 @@ def calculate_nonlog_js_divergence(from_dist, to_dist):
 
 
 def test_divergences():
-    """dist_from = [.6, .3, .1]
+
+
+    """# Calculated a kl div of -0.11142599918864647
+    log_dist_from = np.array([[-5.320183, -5.004407, -3.739851, -2.4476514, -1.146145, 0.20984331, 1.1307197, 0.9277696, -0.45606202, -1.5285392]])#np.array([[-1.704001, -0.21752474, 0.46928683, 1.1984, 1.8707601, 0.4779932,
+                    #           -1.3708279, -3.6425877, -5.238203, -6.296172]])
+    log_dist_to = np.array([[-5.3201814, -5.004406, -3.7398503, -2.4476511, -1.1461449, 0.20984319, 1.1307195, 0.92776954, -0.45606202, -1.5285391]])#np.array([[-1.7040007, -0.21752474, 0.4692869, 1.1984, 1.8707601, 0.47799325,
+                  #           -1.3708278, -3.6425874, -5.238202, -6.296171]])
+
+    log_dist_from = np.load("log_arr_from.npy")
+    log_dist_to = np.load("log_arr_to.npy")
+    log_dist_from = np.reshape(log_dist_from, (1, log_dist_from.shape[0]))
+    log_dist_to = np.reshape(log_dist_to, (1, log_dist_to.shape[0]))
+
+
+    log_dist_from_preexp = log_dist_from[0] - logsumexp(log_dist_from[0])
+    dist_from = list(np.exp(log_dist_from_preexp))
+    log_dist_to_preexp = log_dist_to[0] - logsumexp(log_dist_to[0])
+    dist_to = list(np.exp(log_dist_to_preexp))
+
+    print(log_dist_from_preexp)
+    print(log_dist_to_preexp)
+    print()"""
+
+    dist_from = [.6, .3, .1]
     dist_to = [.2, .4, .4]
     dist_from_2 = [.7, .1, .2]
-    dist_to_2 = [.6, .3, .1]"""
-
-    # Calculated a kl div of -0.11142599918864647
-    log_dist_from = np.array([[-1.704001, -0.21752474, 0.46928683, 1.1984, 1.8707601, 0.4779932,
-                               -1.3708279, -3.6425877, -5.238203, -6.296172]])
-    log_dist_to = np.array([[-1.7040007, -0.21752474, 0.4692869, 1.1984, 1.8707601, 0.47799325,
-                             -1.3708278, -3.6425874, -5.238202, -6.296171]])
-    dist_from = list(np.exp(log_dist_from[0] - logsumexp(log_dist_from[0])))
-    dist_to = list(np.exp(log_dist_to[0] - logsumexp(log_dist_to[0])))
+    dist_to_2 = [.6, .3, .1]
 
     print(dist_from)
     print(dist_to)
+
     print("Actual KL divergence: " + str(calculate_nonlog_kl_divergence(dist_from, dist_to)))
     print("Actual JS divergence: " + str(calculate_nonlog_js_divergence(dist_from, dist_to)))
     print()
-    """print(dist_from_2)
+    print(dist_from_2)
     print(dist_to_2)
     print("Actual KL divergence: " + str(calculate_nonlog_kl_divergence(dist_from_2, dist_to_2)))
     print("Actual JS divergence: " + str(calculate_nonlog_js_divergence(dist_from_2, dist_to_2)))
-    print()"""
+    print()
 
-    # log_dist_from = np.array([dist_from, dist_from_2])
-    # log_dist_to = np.array([dist_to, dist_to_2])
-    # log_dist_from = np.log(log_dist_from)
-    # log_dist_to = np.log(log_dist_to)
+    log_dist_from = np.array([dist_from, dist_from_2])
+    log_dist_to = np.array([dist_to, dist_to_2])
+    log_dist_from = np.log(log_dist_from)
+    log_dist_to = np.log(log_dist_to)
 
     kl_divs = get_kl_div_of_dists(log_dist_from, log_dist_to)
     js_divs = get_js_div_of_dists(log_dist_from, log_dist_to)
 
     print("Calculated KL divergence for dist 1: " + str(kl_divs[0]))
     print("Calculated JS divergence for dist 1: " + str(js_divs[0]))
-    """print("Calculated KL divergence for dist 2: " + str(kl_divs[1]))
-    print("Calculated JS divergence for dist 2: " + str(js_divs[1]))"""
+    print("Calculated KL divergence for dist 2: " + str(kl_divs[1]))
+    print("Calculated JS divergence for dist 2: " + str(js_divs[1]))
     print()
 
     log_dist_from += 5
@@ -218,8 +234,8 @@ def test_divergences():
 
     print("Calculated KL divergence after adjusting log constant for dist 1: " + str(kl_divs[0]))
     print("Calculated JS divergence after adjusting log constant for dist 1: " + str(js_divs[0]))
-    """print("Calculated KL divergence after adjusting log constant for dist 2: " + str(kl_divs[1]))
-    print("Calculated JS divergence after adjusting log constant for dist 2: " + str(js_divs[1]))"""
+    print("Calculated KL divergence after adjusting log constant for dist 2: " + str(kl_divs[1]))
+    print("Calculated JS divergence after adjusting log constant for dist 2: " + str(js_divs[1]))
 
 
 if __name__ == '__main__':

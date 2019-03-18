@@ -21,7 +21,7 @@
   "validation_data_path": "/homes/gws/sofias6/data/yelp_dev.tsv",
     "model": {
         "type": "flan",
-        "pre_document_encoder_dropout": 0.3633964801928899,
+        "pre_document_encoder_dropout": 0.7,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
@@ -48,7 +48,7 @@
             "input_dim": 100,
             "num_layers": 1,
             "hidden_dims": 5,
-            "dropout": 0.42604996839375936,
+            "dropout": 0.7,
             "activations": "linear"
         },
         "initializer": [
@@ -70,11 +70,11 @@
      "trainer": {
         "optimizer": {
             "type": "adam",
-            "lr": 0.0005037515992918302
+            "lr": 0.0001
         },
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
-        "num_epochs": 15,
+        "num_epochs": 60,
         //"grad_norm": 10.0,
         "grad_clipping": 50.0,
         "patience": 5,

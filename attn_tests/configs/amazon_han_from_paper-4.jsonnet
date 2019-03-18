@@ -21,8 +21,8 @@
   "validation_data_path": "/homes/gws/sofias6/data/amazon_dev.tsv",
     "model": {
         "type": "han",
-        "pre_document_encoder_dropout": 0.2,
         "pre_sentence_encoder_dropout": 0.6,
+        "pre_document_encoder_dropout": 0.2,
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
@@ -34,24 +34,28 @@
             }
         },
         "sentence_encoder": {
-           "type": "convolutional_rnn_substitute",
+           "type": "gru",
+           "num_layers": 1,
+           "bidirectional": true,
 	       "input_size": 200,
-           "hidden_size": 100,
+           "hidden_size": 50,
         },
          "document_encoder": {
-           "type": "convolutional_rnn_substitute",
+           "type": "gru",
+           "num_layers": 1,
+           "bidirectional": true,
 	       "input_size": 100,
-           "hidden_size": 100,
+           "hidden_size": 50,
         },
         "word_attention": {
             "type": "simple_han_attention",
-            "context_vector_dim": 100,
-            "input_dim": 100
+            "input_dim": 100,
+            "context_vector_dim": 100
         },
         "sentence_attention": {
             "type": "simple_han_attention",
-            "context_vector_dim": 100,
-            "input_dim": 100
+            "input_dim": 100,
+            "context_vector_dim": 100
         },
         "output_logit": {
             "input_dim": 100,
@@ -71,8 +75,8 @@
     },
     "iterator": {
         "type": "extended_bucket",
-        "max_instances_in_memory": 1000000,
         "sorting_keys": [["sentences", "num_sentences"], ["tokens", "list_num_tokens"]],
+        "max_instances_in_memory": 1000000,
         "batch_size": 64,
         "maximum_samples_per_batch": ["list_num_tokens", 9000],  // confirmed that this affects batch size
         "biggest_batch_first": false
@@ -85,7 +89,8 @@
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 2,
         "num_epochs": 60,
-        "grad_norm": 10.0,
+        //"grad_norm": 10.0,
+        "grad_clipping": 50.0,
         "patience": 5,
         "cuda_device": 1,
         "learning_rate_scheduler": {
