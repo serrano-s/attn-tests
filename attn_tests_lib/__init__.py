@@ -10,3 +10,4 @@ from .intermediate_batch_iterator import load_log_unnormalized_attn_dists
 from .simple_han_attn_layer import SimpleHanAttention
 from .talkative_simple_han_attn_layer import TalkativeSimpleHanAttention
 from .flat_attention_network import FlatAttentionNetwork
+from .pass_through_encoder import PassThroughSeq2SeqEncoder

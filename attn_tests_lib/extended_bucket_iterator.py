@@ -7,6 +7,7 @@ from allennlp.common.util import lazy_groups_of, add_noise_to_dict_values
 from allennlp.data.iterators.bucket_iterator import BucketIterator
 from allennlp.data.iterators.data_iterator import DataIterator
 from allennlp.data.vocabulary import Vocabulary
+import math
 
 
 def sort_by_padding_modified(instances: List[Instance],
@@ -69,6 +70,47 @@ class ExtendedBucketIterator(BucketIterator):
             for ret_val in iter(self._modified_create_batches(instances, shuffle)):
                 yield ret_val
 
+    def old_ensure_batch_is_sufficiently_small(self, batch_instances: Iterable[Instance]) -> List[List[Instance]]:
+        """
+        If self._maximum_samples_per_batch is specified, then split the batch into smaller
+        sub-batches if it exceeds the maximum size.
+        """
+        if self._maximum_samples_per_batch is None:
+            return [list(batch_instances)]
+
+        # check if we need to break into smaller chunks
+        key, limit = self._maximum_samples_per_batch
+        padding_length = -1
+        list_batch_instances = list(batch_instances)
+        for instance in list_batch_instances:
+            if self.vocab is not None:
+                # we index here to ensure that shape information is available,
+                # as in some cases (with self._maximum_samples_per_batch)
+                # we need access to shaping information before batches are constructed)
+                instance.index_fields(self.vocab)
+            field_lengths = instance.get_padding_lengths()
+            for _, lengths in field_lengths.items():
+                try:
+                    padding_length = max(padding_length,
+                                         lengths[key])
+                except KeyError:
+                    pass
+
+        if padding_length * len(list_batch_instances) > limit:
+            # need to shrink
+            num_samples = padding_length * len(list_batch_instances)
+            num_shrunk_batches = math.ceil(num_samples / float(limit))
+            shrunk_batch_size = math.ceil(len(list_batch_instances) / num_shrunk_batches)
+            shrunk_batches = []
+            start = 0
+            while start < len(list_batch_instances):
+                end = start + shrunk_batch_size
+                shrunk_batches.append(list_batch_instances[start:end])
+                start = end
+            return shrunk_batches
+        else:
+            return [list_batch_instances]
+
     def _modified_create_batches(self, instances: Iterable[Instance], shuffle: bool) -> Iterable[Batch]:
         for instance_list in self._memory_sized_lists(instances):
 
@@ -79,7 +121,7 @@ class ExtendedBucketIterator(BucketIterator):
 
             batches = []
             for batch_instances in lazy_groups_of(iter(instance_list), self._batch_size):
-                for possibly_smaller_batches in self._ensure_batch_is_sufficiently_small(batch_instances):
+                for possibly_smaller_batches in self.old_ensure_batch_is_sufficiently_small(batch_instances):
                     batches.append(Batch(possibly_smaller_batches))
 
             move_to_front = self._biggest_batch_first and len(batches) > 1

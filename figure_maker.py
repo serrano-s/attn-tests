@@ -17,7 +17,7 @@ from process_test_outputs import load_in_data_table, get_np_arr_of_one_attn_weig
 from math import ceil
 from random import random
 
-base_output_dir = '/homes/gws/sofias6/attn-test-output/'
+from default_directories import base_output_dir
 
 def get_filenames_for_subdir(mid_dir):
     global base_output_dir
@@ -46,6 +46,15 @@ yahoo_flanconv_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-
 imdb_flanconv_table = load_in_data_table(*get_filenames_for_subdir('imdb-flanconv-convfix'))
 amazon_flanconv_table = load_in_data_table(*get_filenames_for_subdir('amazon-flanconv-fiveclass'))
 yelp_flanconv_table = load_in_data_table(*get_filenames_for_subdir('yelp-flanconv-fiveclass'))
+yahoo_flanencless_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-flan_encless'))
+imdb_flanencless_table = load_in_data_table(*get_filenames_for_subdir('imdb-flan_encless'))
+amazon_flanencless_table = load_in_data_table(*get_filenames_for_subdir('amazon-flan_encless'))
+yelp_flanencless_table = load_in_data_table(*get_filenames_for_subdir('yelp-flan_encless'))
+yahoo_hanencless_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-han_encless'))
+imdb_hanencless_table = load_in_data_table(*get_filenames_for_subdir('imdb-han_encless'))
+amazon_hanencless_table = load_in_data_table(*get_filenames_for_subdir('amazon-han_encless'))
+yelp_hanencless_table = load_in_data_table(*get_filenames_for_subdir('yelp-han_encless'))
+
 
 from process_test_outputs import EXTRACTED_SINGLE_ATTN_WEIGHT_END, EXTRACTED_SINGLE_WEIGHT_KL_START, EXTRACTED_SINGLE_WEIGHT_KL_END, \
         EXTRACTED_SINGLE_WEIGHT_JS_START, EXTRACTED_SINGLE_WEIGHT_JS_END, NEEDED_REM_RAND_X_FOR_DECFLIP_START, \
@@ -83,6 +92,10 @@ yahoo_hanconv_table = yahoo_hanconv_table[yahoo_han_mask]
 imdb_hanconv_table = imdb_hanconv_table[imdb_han_mask]
 amazon_hanconv_table = amazon_hanconv_table[amazon_han_mask]
 yelp_hanconv_table = yelp_hanconv_table[yelp_han_mask]
+yahoo_hanencless_table = yahoo_hanencless_table[yahoo_han_mask]
+imdb_hanencless_table = imdb_hanencless_table[imdb_han_mask]
+amazon_hanencless_table = amazon_hanencless_table[amazon_han_mask]
+yelp_hanencless_table = yelp_hanencless_table[yelp_han_mask]
 yahoo_flanrnn_table = yahoo_flanrnn_table[yahoo_flan_mask]
 imdb_flanrnn_table = imdb_flanrnn_table[imdb_flan_mask]
 amazon_flanrnn_table = amazon_flanrnn_table[amazon_flan_mask]
@@ -91,6 +104,10 @@ yahoo_flanconv_table = yahoo_flanconv_table[yahoo_flan_mask]
 imdb_flanconv_table = imdb_flanconv_table[imdb_flan_mask]
 amazon_flanconv_table = amazon_flanconv_table[amazon_flan_mask]
 yelp_flanconv_table = yelp_flanconv_table[yelp_flan_mask]
+yahoo_flanencless_table = yahoo_flanencless_table[yahoo_flan_mask]
+imdb_flanencless_table = imdb_flanencless_table[imdb_flan_mask]
+amazon_flanencless_table = amazon_flanencless_table[amazon_flan_mask]
+yelp_flanencless_table = yelp_flanencless_table[yelp_flan_mask]
 
 assert LAST_IND_OF_OUTPUT_CLASSES is not None
 
@@ -465,15 +482,15 @@ def make_2x2_vsrand_decflip_stackplot(tuples_of_title_x_y_noneflipped, filename,
 
 
 def make_fracremoved_boxplots(filename, list_of_ordering_names, dataset_orderingfracdistribs, model,
-                              y_axis_title="Fraction of Original Attention\nWeights Removed"):
+                              y_axis_title="Fractions Removed"):
     if "Fraction" in y_axis_title:
-        plot_title = "Fractions of Original Attended Items Removed Before First Decision " +\
+        plot_title = "Fractions of Original Attended Items Removed Before First\nDecision " +\
                      "Flip Occurred: " + model
-        palette = {"Random": "#2589CC", "Attention": "#80D4FF", "Gradient": "#D4F3FF"}
+        palette = {"Random": "#2589CC", "Attention": "#80D4FF", "Gradient": "#D4F3FF", "Attn * Grad": "#FFFFFF"}
     else:
         plot_title = "Probability Masses of Original Attention Distributions Removed Before First Decision " +\
                      "Flip Occurred: " + model
-        palette = {"Random": "#A970FF", "Attention": "#EEA8FF", "Gradient": "#FFE0FF"}
+        palette = {"Random": "#A970FF", "Attention": "#EEA8FF", "Gradient": "#FFE0FF", "Attn * Grad": "#FFFFFF"}
     title_of_each_graph = "Dataset"
     list_of_row_dicts = []
     for tup in dataset_orderingfracdistribs:
@@ -494,6 +511,7 @@ def make_fracremoved_boxplots(filename, list_of_ordering_names, dataset_ordering
                 hue="Ranking Scheme", palette=palette,
                 data=data_to_plot)
     ax.set_title(plot_title)
+    ax.set_yticks([0, .25, .5, .75, 1])
     ax.legend_.remove()
     sns.despine(offset=20, trim=True)
 
@@ -634,6 +652,14 @@ def make_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag=
         model = 'hanrnn'
         model_name = 'HANrnns'
         is_han = True
+    elif model_tag.startswith('hanencless'):
+        yahoo_table = yahoo_hanencless_table
+        imdb_table = imdb_hanencless_table
+        amazon_table = amazon_hanencless_table
+        yelp_table = yelp_hanencless_table
+        model = 'hanencless'
+        model_name = "HANnoencs"
+        is_han = True
     elif model_tag.startswith('flanconv'):
         yahoo_table = yahoo_flanconv_table
         imdb_table = imdb_flanconv_table
@@ -649,6 +675,14 @@ def make_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag=
         yelp_table = yelp_flanrnn_table
         model_name = 'FLANrnns'
         model = 'flanrnn'
+        is_han = False
+    elif model_tag.startswith('flanencless'):
+        yahoo_table = yahoo_flanencless_table
+        imdb_table = imdb_flanencless_table
+        amazon_table = amazon_flanencless_table
+        yelp_table = yelp_flanencless_table
+        model = 'flanencless'
+        model_name = "FLANnoencs"
         is_han = False
     list_of_ordering_names = ["Random", "Attention", "Gradient"]
     yahoo_table = dec_table_size_to_keep_x_pct_of_data(1, yahoo_table)
@@ -676,6 +710,112 @@ def make_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag=
                        yelp_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][yelp_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
                        yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
                        yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1])
+    make_fracremoved_boxplots(model_tag + "_fracremoved_boxplots", list_of_ordering_names,
+                              [yahoo_model_tup, imdb_model_tup, amazon_model_tup, yelp_model_tup], model_name)
+
+
+def make_boxplots_with_four(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag=''):
+    if model_tag.endswith('/'):
+        model_tag = model_tag[:-1]
+    if not yahoo_tag.endswith('/'):
+        yahoo_tag += '/'
+    if len(yahoo_tag) > 1:
+        yahoo_tag = '-' + yahoo_tag
+    if not imdb_tag.endswith('/'):
+        imdb_tag += '/'
+    if len(imdb_tag) > 1:
+        imdb_tag = '-' + imdb_tag
+    if not amazon_tag.endswith('/'):
+        amazon_tag += '/'
+    if len(amazon_tag) > 1:
+        amazon_tag = '-' + amazon_tag
+    if not yelp_tag.endswith('/'):
+        yelp_tag += '/'
+    if len(yelp_tag) > 1:
+        yelp_tag = '-' + yelp_tag
+    print("Starting to make fraction-removed boxplot")
+    if model_tag.startswith('hanconv'):
+        yahoo_table = yahoo_hanconv_table
+        imdb_table = imdb_hanconv_table
+        amazon_table = amazon_hanconv_table
+        yelp_table = yelp_hanconv_table
+        model = 'hanconv'
+        model_name = 'HANconvs'
+        is_han = True
+    elif model_tag.startswith('hanrnn'):
+        yahoo_table = yahoo_hanrnn_table
+        imdb_table = imdb_hanrnn_table
+        amazon_table = amazon_hanrnn_table
+        yelp_table = yelp_hanrnn_table
+        model = 'hanrnn'
+        model_name = 'HANrnns'
+        is_han = True
+    elif model_tag.startswith('hanencless'):
+        yahoo_table = yahoo_hanencless_table
+        imdb_table = imdb_hanencless_table
+        amazon_table = amazon_hanencless_table
+        yelp_table = yelp_hanencless_table
+        model = 'hanencless'
+        model_name = "HANnoencs"
+        is_han = True
+    elif model_tag.startswith('flanconv'):
+        yahoo_table = yahoo_flanconv_table
+        imdb_table = imdb_flanconv_table
+        amazon_table = amazon_flanconv_table
+        yelp_table = yelp_flanconv_table
+        model = 'flanconv'
+        model_name = 'FLANconvs'
+        is_han = False
+    elif model_tag.startswith('flanrnn'):
+        yahoo_table = yahoo_flanrnn_table
+        imdb_table = imdb_flanrnn_table
+        amazon_table = amazon_flanrnn_table
+        yelp_table = yelp_flanrnn_table
+        model_name = 'FLANrnns'
+        model = 'flanrnn'
+        is_han = False
+    elif model_tag.startswith('flanencless'):
+        yahoo_table = yahoo_flanencless_table
+        imdb_table = imdb_flanencless_table
+        amazon_table = amazon_flanencless_table
+        yelp_table = yelp_flanencless_table
+        model = 'flanencless'
+        model_name = "FLANnoencs"
+        is_han = False
+    list_of_ordering_names = ["Random", "Attention", "Gradient", "Attn * Grad"]
+    yahoo_table = dec_table_size_to_keep_x_pct_of_data(1, yahoo_table)
+    imdb_table = dec_table_size_to_keep_x_pct_of_data(1, imdb_table)
+    amazon_table = dec_table_size_to_keep_x_pct_of_data(1, amazon_table)
+    yelp_table = dec_table_size_to_keep_x_pct_of_data(1, yelp_table)
+    yahoo_model_tup = ("Yahoo",
+                       yahoo_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][yahoo_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
+                       yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
+                       yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1],
+                       yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT][
+                           yahoo_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1])
+    yahoo_by_attn = list(yahoo_model_tup[2])
+    sorted_yahoo_by_attn = sorted(yahoo_by_attn)
+    print("Upper quartile of yahoo: " + str(sorted_yahoo_by_attn[3 * int(len(yahoo_by_attn) / 4)]))
+    print("Median of yahoo: " + str(sorted_yahoo_by_attn[int(len(yahoo_by_attn) / 2)]))
+    print("Lower quartile of yahoo: " + str(sorted_yahoo_by_attn[int(len(yahoo_by_attn) / 4)]))
+    imdb_model_tup = ("IMDB",
+                       imdb_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][imdb_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
+                       imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
+                       imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1],
+                      imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT][
+                          imdb_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1])
+    amazon_model_tup = ("Amazon",
+                       amazon_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][amazon_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
+                       amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
+                       amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1],
+                        amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT][
+                            amazon_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1],)
+    yelp_model_tup = ("Yelp",
+                       yelp_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START][yelp_table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START] != -1],
+                       yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP][yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] != -1],
+                       yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1],
+                      yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT][
+                          yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1])
     make_fracremoved_boxplots(model_tag + "_fracremoved_boxplots", list_of_ordering_names,
                               [yahoo_model_tup, imdb_model_tup, amazon_model_tup, yelp_model_tup], model_name)
 
@@ -716,6 +856,14 @@ def make_probmass_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', 
         model = 'hanrnn'
         model_name = "HANrnns"
         is_han = True
+    elif model_tag.startswith('hanencless'):
+        yahoo_table = yahoo_hanencless_table
+        imdb_table = imdb_hanencless_table
+        amazon_table = amazon_hanencless_table
+        yelp_table = yelp_hanencless_table
+        model = 'hanencless'
+        model_name = "HANnoencs"
+        is_han = True
     elif model_tag.startswith('flanconv'):
         yahoo_table = yahoo_flanconv_table
         imdb_table = imdb_flanconv_table
@@ -731,6 +879,14 @@ def make_probmass_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', 
         yelp_table = yelp_flanrnn_table
         model = 'flanrnn'
         model_name = 'FLANrnns'
+        is_han = False
+    elif model_tag.startswith('flanencless'):
+        yahoo_table = yahoo_flanencless_table
+        imdb_table = imdb_flanencless_table
+        amazon_table = amazon_flanencless_table
+        yelp_table = yelp_flanencless_table
+        model = 'flanencless'
+        model_name = "FLANnoencs"
         is_han = False
     list_of_ordering_names = ["Random", "Attention", "Gradient"]
     yahoo_table = dec_table_size_to_keep_x_pct_of_data(1, yahoo_table)
@@ -1059,6 +1215,13 @@ def make_jsdiv_regression_plot(model_tag, sample_x, yahoo_tag='', imdb_tag='', a
         yelp_table = yelp_hanrnn_table
         model = 'hanrnn'
         is_han = True
+    elif model_tag.startswith('han_encless'):
+        yahoo_table = yahoo_hanencless_table
+        imdb_table = imdb_hanencless_table
+        amazon_table = amazon_hanencless_table
+        yelp_table = yelp_hanencless_table
+        model = 'hanencless'
+        is_han = True
     elif model_tag.startswith('flanconv'):
         yahoo_table = yahoo_flanconv_table
         imdb_table = imdb_flanconv_table
@@ -1072,6 +1235,13 @@ def make_jsdiv_regression_plot(model_tag, sample_x, yahoo_tag='', imdb_tag='', a
         amazon_table = amazon_flanrnn_table
         yelp_table = yelp_flanrnn_table
         model = 'flanrnn'
+        is_han = False
+    elif model_tag.startswith('flan_encless'):
+        yahoo_table = yahoo_flanencless_table
+        imdb_table = imdb_flanencless_table
+        amazon_table = amazon_flanencless_table
+        yelp_table = yelp_flanencless_table
+        model = 'flanencless'
         is_han = False
     if is_han:
         yahoo_mask = yahoo_han_mask
@@ -1098,6 +1268,7 @@ def make_jsdiv_regression_plot(model_tag, sample_x, yahoo_tag='', imdb_tag='', a
         get_np_arr_of_one_attn_weight_per_instance(0, is_han, base_output_dir + 'amazon-' + model_tag +
                                                    amazon_tag)[amazon_mask]
     amazon_model_tup = make_rand_jsdiv_model_tup(amazon_highestattnweights, amazon_table, "Amazon")
+
     #amazon_low, amazon_high = ask_where_to_split_attndiff_plots(amazon_model_tup)
     yelp_highestattnweights = \
         get_np_arr_of_one_attn_weight_per_instance(0, is_han, base_output_dir + 'yelp-' + model_tag +
@@ -1427,13 +1598,15 @@ def main():
     sample_x = 10
     assert yahoo_hanrnn_table.shape[1] == imdb_hanrnn_table.shape[1]
 
-    """make_probmass_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
+    make_probmass_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
                             amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
     make_probmass_boxplots('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
                   amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_probmass_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_probmass_boxplots('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
-                  amazon_tag='fiveclass', yelp_tag='fiveclass')"""
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_probmass_boxplots('hanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+    make_probmass_boxplots('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
 
     make_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
                             amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
@@ -1442,6 +1615,18 @@ def main():
     make_boxplots('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_boxplots('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
                                               amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_boxplots('hanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+    make_boxplots('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+
+    make_boxplots_with_four('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
+                  amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
+    make_boxplots_with_four('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_boxplots_with_four('flanrnn', yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_boxplots_with_four('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
+                  amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_boxplots_with_four('hanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+    make_boxplots_with_four('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
 
     """make_decflip_regression_plot_vs2ndhighest('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
                                               amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
@@ -1459,6 +1644,8 @@ def main():
     make_jsdiv_regression_plot('flanrnn', sample_x, yahoo_tag='', imdb_tag='', amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_jsdiv_regression_plot('flanconv', sample_x, yahoo_tag='convfix', imdb_tag='convfix',
                   amazon_tag='fiveclass', yelp_tag='fiveclass')
+    make_jsdiv_regression_plot('han_encless', sample_x, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+    make_jsdiv_regression_plot('flan_encless', sample_x, yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
 
 
 if __name__ == '__main__':

@@ -7,12 +7,8 @@ from torch.autograd import Variable
 from torch.nn.functional import normalize
 from allennlp.models.model import Model
 from allennlp.common import Params
-from allennlp.models import load_archive
 from allennlp.data.dataset_readers import DatasetReader
-from allennlp.data.tokenizers import WordTokenizer
-from allennlp.data.tokenizers.word_filter import PassThroughWordFilter
-from allennlp.data.iterators import BasicIterator, DataIterator
-from textcat import TextCatReader
+from allennlp.data.iterators import BasicIterator
 from allennlp.data import Vocabulary
 import attn_tests_lib
 from allennlp.nn import util
@@ -20,12 +16,14 @@ from scipy.misc import logsumexp
 from attn_tests_lib import load_attn_dists, load_log_unnormalized_attn_dists
 from attn_tests_lib import IntermediateBatchIterator
 from attn_tests_lib import AttentionIterator
-import json
-from plain_model_test import evaluate
 from allennlp.common.util import import_submodules
 from random import shuffle
 import pickle
 from copy import deepcopy
+from math import ceil
+from default_directories import base_output_dir as base_output_directory
+from default_directories import base_data_dir as base_data_directory
+from default_directories import base_serialized_models_dir as base_serialized_models_directory
 
 
 import random
@@ -35,7 +33,6 @@ torch.manual_seed(5)
 # Seed all GPUs with the same seed if available.
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(5)
-
 
 
 unchanged_fname = "original_results.csv"
@@ -71,7 +68,7 @@ def load_testing_models_in_eval_mode_from_serialization_dir(s_dir, attn_weight_f
 
 
 def set_up_inorder_test_loader(data_file, batch_size, max_samples_per_batch, vocab_dir_name, model_folder,
-                               check_num_iterated=True, loading_han=True):
+                               check_num_iterated=False, loading_han=True):
     # make sure the number of test instances that the iterator will present is equal to the number of test
     # instances that we think we're iterating through
     # first, get that second number: how many test instances do we *think* we should be iterating through?
@@ -101,7 +98,7 @@ def set_up_inorder_test_loader(data_file, batch_size, max_samples_per_batch, voc
     dataset_iterator.index_with(Vocabulary.from_files(vocab_dir_name))
 
     # now iterate through and make sure the number of instances we pass matches what we expect
-    """if check_num_iterated:
+    if check_num_iterated:
         print("Checking how many instances the iterator actually goes through...")
         num_instances_found = 0
         for batch in dataset_iterator._create_batches(dataset_reader._read(data_file), shuffle=False):
@@ -112,7 +109,7 @@ def set_up_inorder_test_loader(data_file, batch_size, max_samples_per_batch, voc
         assert num_instances_expected == num_instances_found, ("From file, expected " + str(num_instances_expected) +
                                                                " test instances, but dataset iterator turned up " +
                                                                str(num_instances_found))
-        print("Found correct number of instances in test iterator.")"""
+        print("Found correct number of instances in test iterator.")
     return dataset_reader, dataset_iterator, num_instances_expected
 
 
@@ -127,7 +124,7 @@ def get_gradients_wrt_attention(attention_weights, corr_vects, gradient_reportin
     thing_to_differentiate = differentiable_function_on_output(model_presoftmax_output)
     thing_to_differentiate.backward()
 
-    # open gradients file, process it
+    # open gradtients file, process it
     with open(gradient_reporting_classifier._temp_filename, 'rb') as f:
         corr_grad_for_attn = pickle.load(f)
         corr_grad_for_attn = util.move_to_device(corr_grad_for_attn, gpu)
@@ -152,7 +149,7 @@ def exp_highest_val_over_sum_exp_all_vals(output_logits):
 
 
 def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             original_output_filename, grad_based_stats_filename):
+                             original_output_filename, grad_based_stats_filename, suppress_warnings=False):
     assert not os.path.isfile(grad_based_stats_filename)
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
     grad_getting_classifier = set_up_gradient_reporting_classifier(vanilla_classifier=classifier)
@@ -168,7 +165,13 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
     if not os.path.isdir(base_filename):
         os.makedirs(base_filename)
     base_filename += 'gradient_wrt_attn_weights_'
-    for batch_tup in tqdm(batch_iterator, desc="Calculating grad-based decision flip stats"):
+    total_num_dist_calcs = 0
+    min_calculated_kl = 1000
+    total_num_negative_kl_dist_calcs = 0
+    min_calculated_js = 1000
+    total_num_negative_js_dist_calcs = 0
+    for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
+                          desc="Calculating grad-based decision flip stats"):
         list_of_lens = batch_tup[2]
         original_attn_weights = util.move_to_device(batch_tup[0], gpu)
         original_attn_weights_for_backpropagating = deepcopy(original_attn_weights)
@@ -191,19 +194,19 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
             list_of_original_log_np_arrays.append(next(corr_output_yielder))
         list_of_original_log_np_arrays = np.array(list_of_original_log_np_arrays)
         original_dists = np.array(list_of_original_log_np_arrays)
-        _, list_of_batch_results_plaingrad = \
+        _, list_of_batch_results_plaingrad, neg_calculation_artifacts_info_tup_plaingrad = \
             get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
                                                batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
-                                               zero_out_by=corr_grads_tensor.cpu().numpy())
-        _, list_of_batch_results_gradmult = \
+                                               zero_out_by=corr_grads_tensor.cpu().numpy(),
+                                               suppress_warnings=suppress_warnings)
+        _, list_of_batch_results_gradmult, neg_calculation_artifacts_info_tup_gradmult = \
             get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
                                                batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
-                                               zero_out_by=attn_times_grads.cpu().numpy())
+                                               zero_out_by=attn_times_grads.cpu().numpy(),
+                                               suppress_warnings=suppress_warnings)
 
         inds_in_dec_order, _ = get_inds_of_sorted_attnshaped_vals(corr_grads_tensor, list_of_lens)
         inds_in_dec_order_by_mult, _ = get_inds_of_sorted_attnshaped_vals(attn_times_grads, list_of_lens)
-
-        print_at_end = str(inds_in_dec_order[9])
 
         # remove highest-gradient element first
 
@@ -254,6 +257,35 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
                              str(top_singlestats_gradmult[6])]
             lists_to_write_to_file.append(instance_list)
 
+        total_num_dist_calcs += (len(list_of_lens) * len(neg_calculation_artifacts_info_tup_plaingrad))
+        for i in range(len(neg_calculation_artifacts_info_tup_plaingrad)):
+            local_tup = neg_calculation_artifacts_info_tup_plaingrad[i]
+            if local_tup[0] < min_calculated_kl:
+                min_calculated_kl = local_tup[0]
+            total_num_negative_kl_dist_calcs += local_tup[1]
+            if local_tup[2] < min_calculated_js:
+                min_calculated_js = local_tup[2]
+            total_num_negative_js_dist_calcs += local_tup[3]
+        total_num_dist_calcs += (len(list_of_lens) * len(neg_calculation_artifacts_info_tup_gradmult))
+        for i in range(len(neg_calculation_artifacts_info_tup_gradmult)):
+            local_tup = neg_calculation_artifacts_info_tup_gradmult[i]
+            if local_tup[0] < min_calculated_kl:
+                min_calculated_kl = local_tup[0]
+            total_num_negative_kl_dist_calcs += local_tup[1]
+            if local_tup[2] < min_calculated_js:
+                min_calculated_js = local_tup[2]
+            total_num_negative_js_dist_calcs += local_tup[3]
+    if total_num_dist_calcs > 0:
+        # at least one instance was iterated over
+        print(str(total_num_negative_kl_dist_calcs) + ' / ' + str(total_num_dist_calcs) +
+              ' calculated KL divs while calculating grad-based stats were negative; ' +
+              'lowest calculated KL div was ' + str(min_calculated_kl) +
+              ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
+        print(str(total_num_negative_js_dist_calcs) + ' / ' + str(total_num_dist_calcs) +
+              ' calculated JS divs while calculating grad-based stats were negative; ' +
+              'lowest calculated JS div was ' + str(min_calculated_js) +
+              ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
+
     with open(grad_based_stats_filename, 'w') as f:
         f.write('id,seq_len,needed_to_rem_x_top_items_for_decflip,needed_to_rem_x_top_probmass_for_decflip,' +
                 'needed_to_rem_frac_x_top_items_for_decflip,needed_to_rem_x_top_multitems_for_decflip,' +
@@ -272,7 +304,6 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
                     ',' + instance_list[14] + ',' + instance_list[15] + ',' + instance_list[16] +
                     ',' + instance_list[17] + ',' + instance_list[18] + ',' + instance_list[19] + '\n')
     print("Done writing gradient-based decision-flip stats file.")
-    print(print_at_end)
 
 
 def get_batch_size_max_samples_per_batch_from_config_file(config_filename):
@@ -318,8 +349,11 @@ def get_batch_size_max_samples_per_batch_from_config_file(config_filename):
     return batch_size, max_samples_per_batch, vocab_dir
 
 
-def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False):
+def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False, return_min_entropy_and_num_neg=False):
     entropies = []
+    if return_min_entropy_and_num_neg:
+        total_num_neg = 0
+        min_entropy = 0
     for i in range(log_dists.shape[0]):
         log_dist = log_dists[i, :lengths_of_dists[i]]
         log_dist = log_dist - logsumexp(log_dist)
@@ -327,13 +361,21 @@ def get_entropy_of_dists(log_dists, lengths_of_dists, suppress_warnings=False):
         total = np.sum(exp_dist)
         assert .98 < total < 1.02, str(exp_dist) + '\n' + str(np.sum(exp_dist)) + "\n" + str(log_dist)
         entropy = -1 * np.sum(log_dist * exp_dist)
-        if (not suppress_warnings) and not entropy > -1e-10:
-            print("Calculated an entropy of " + str(entropy))
+        if entropy < 0:
+            if not suppress_warnings:
+                print("Calculated an entropy of " + str(entropy))
+            if return_min_entropy_and_num_neg:
+                total_num_neg += 1
+                if entropy < min_entropy:
+                    min_entropy = entropy
         entropies.append(entropy)
-    return entropies
+    if return_min_entropy_and_num_neg:
+        return entropies, min_entropy, total_num_neg
+    else:
+        return entropies
 
 
-def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
+def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False, return_min_kl_div_and_num_neg=False):
     kl_divs = []
     mult_by = 10
     # calculate constants by which to adjust log distributions prior to logsumexp computation;
@@ -341,6 +383,9 @@ def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
     arr_of_vals_to_add_to_log_dists = 4 - (log_dists.sum(axis=1) / log_dists.shape[1])
     arr_of_vals_to_add_to_new_log_dists = -10 - (new_log_dists.sum(axis=1) / new_log_dists.shape[1])
     log_mult_by = np.log(mult_by)
+    if return_min_kl_div_and_num_neg:
+        total_num_neg = 0
+        min_kl_div = 0
     for i in range(log_dists.shape[0]):
         log_dist = log_dists[i] - logsumexp(log_dists[i] + arr_of_vals_to_add_to_log_dists[i]) + \
                    arr_of_vals_to_add_to_log_dists[i]
@@ -349,18 +394,29 @@ def get_kl_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
         new_log_dist_minus_log_dist = new_log_dist - log_dist
         kl_div = (np.exp(new_log_dist + log_mult_by) * new_log_dist_minus_log_dist).sum()
         kl_div = kl_div / mult_by
-        if (not suppress_warnings) and kl_div < 0:
-            print("Calculated a kl div of " + str(kl_div))
+        if kl_div < 0:
+            if not suppress_warnings:
+                print("Calculated a kl div of " + str(kl_div))
+            if return_min_kl_div_and_num_neg:
+                total_num_neg += 1
+                if kl_div < min_kl_div:
+                    min_kl_div = kl_div
         kl_divs.append(kl_div)
-    return kl_divs
+    if return_min_kl_div_and_num_neg:
+        return kl_divs, min_kl_div, total_num_neg
+    else:
+        return kl_divs
 
 
-def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
+def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False, return_min_js_div_and_num_neg=False):
     js_divs = []
     # calculate constants by which to adjust log distributions prior to logsumexp computation;
     # these seem to put most distributions in a range where logsumexp works with reasonable precision
     arr_of_vals_to_add_to_log_dists = 4 - (log_dists.sum(axis=1) / log_dists.shape[1])
     arr_of_vals_to_add_to_new_log_dists = -10 - (new_log_dists.sum(axis=1) / new_log_dists.shape[1])
+    if return_min_js_div_and_num_neg:
+        total_num_neg = 0
+        min_js_div = 1000
     for i in range(log_dists.shape[0]):
         p = log_dists[i] - logsumexp(log_dists[i] + arr_of_vals_to_add_to_log_dists[i]) + \
             arr_of_vals_to_add_to_log_dists[i]
@@ -371,24 +427,56 @@ def get_js_div_of_dists(log_dists, new_log_dists, suppress_warnings=False):
         m = np.reshape(logsumexp(np.concatenate([p, q], axis=0), axis=0) - float(np.log(2)), (1, log_dists.shape[1]))
         js_div = (get_kl_div_of_dists(m, p, suppress_warnings=suppress_warnings)[0] +
                   get_kl_div_of_dists(m, q, suppress_warnings=suppress_warnings)[0]) / 2
-        if (not suppress_warnings) and js_div < 0:
-            print("Calculated a js div of " + str(js_div))
+        if js_div < 0:
+            if not suppress_warnings:
+                print("Calculated a js div of " + str(js_div))
+            if return_min_js_div_and_num_neg:
+                total_num_neg += 1
+                if js_div < min_js_div:
+                    min_js_div = js_div
         js_divs.append(js_div)
-    return js_divs
+    if return_min_js_div_and_num_neg:
+        return js_divs, min_js_div, total_num_neg
+    else:
+        return js_divs
 
 
-def get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename):
+def get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=False):
     instance_info_list = []
     attn_iterator = AttentionIterator(attn_weight_filename, return_log_attn_vals=True)
-    instance_ind = 0
+    instance_ind = 0  # equivalent to the total num of dists iterated over
+    min_js_div = 1000
+    total_num_neg_calculated_js_vals = 0
+    min_kl_div = 1000
+    total_num_neg_calculated_kl_vals = 0
     for log_attn_dist in tqdm(iter(attn_iterator), desc="Calculating attn divs from unif"):
         instance_ind += 1
         num_attn_items = len(log_attn_dist)
         corr_log_unif_dist = np.zeros((1, num_attn_items), dtype=float) + np.log([1 / num_attn_items])[0]
         np_log_attn_dist = np.array([log_attn_dist])
-        kl_div = float(get_kl_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
-        js_div = float(get_js_div_of_dists(corr_log_unif_dist, np_log_attn_dist)[0])
+        kl_div, local_min_kl, num_neg_kl = get_kl_div_of_dists(corr_log_unif_dist, np_log_attn_dist,
+                                                               suppress_warnings=suppress_warnings,
+                                                               return_min_kl_div_and_num_neg=True)
+        js_div, local_min_js, num_neg_js = get_js_div_of_dists(corr_log_unif_dist, np_log_attn_dist,
+                                                               suppress_warnings=suppress_warnings,
+                                                               return_min_js_div_and_num_neg=True)
+        kl_div = float(kl_div[0])
+        js_div = float(js_div[0])
+        if local_min_kl < min_kl_div:
+            min_kl_div = local_min_kl
+        if local_min_js < min_js_div:
+            min_js_div = local_min_js
+        total_num_neg_calculated_kl_vals += num_neg_kl
+        total_num_neg_calculated_js_vals += num_neg_js
         instance_info_list.append((str(instance_ind), str(num_attn_items), str(kl_div), str(js_div)))
+    if instance_ind > 0:
+        # at least one instance was iterated over
+        print(str(total_num_neg_calculated_kl_vals) + ' / ' + str(instance_ind) +
+              ' calculated KL divs from unif dists to attn dists were negative; lowest calculated KL div was ' +
+              str(min_kl_div) + ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
+        print(str(total_num_neg_calculated_js_vals) + ' / ' + str(instance_ind) +
+              ' calculated JS divs from unif dists to attn dists were negative; lowest calculated JS div was ' +
+              str(min_js_div) + ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
     with open(attn_div_from_unif_filename, 'w') as f:
         f.write("id,attn_seq_len,attn_kl_div_from_unif,attn_js_div_from_unif\n")
         for info_list in instance_info_list:
@@ -485,7 +573,7 @@ class OriginalOutputDistIterator:
                     yield np.array(dist)
 
 
-def get_onerun_diff_from_original_stats(new_output_dict, log_original_np_output_arrays):
+def get_onerun_diff_from_original_stats(new_output_dict, log_original_np_output_arrays, suppress_warnings=False):
     logits = new_output_dict["label_logits"].data.cpu().numpy()
 
     old_decisions = np.argmax(log_original_np_output_arrays, axis=1)
@@ -494,11 +582,13 @@ def get_onerun_diff_from_original_stats(new_output_dict, log_original_np_output_
     dec_flipped = (old_decisions != new_decisions)
     decision_flips_arr[dec_flipped] = new_decisions[dec_flipped]
 
-    kl_divs = get_kl_div_of_dists(log_original_np_output_arrays, logits)
-
-    js_divs = get_js_div_of_dists(log_original_np_output_arrays, logits)
-
-    return kl_divs, js_divs, decision_flips_arr
+    kl_divs, local_min_kl, num_neg_kl = get_kl_div_of_dists(log_original_np_output_arrays, logits,
+                                                            suppress_warnings=suppress_warnings,
+                                                            return_min_kl_div_and_num_neg=True)
+    js_divs, local_min_js, num_neg_js = get_js_div_of_dists(log_original_np_output_arrays, logits,
+                                                            suppress_warnings=suppress_warnings,
+                                                            return_min_js_div_and_num_neg=True)
+    return kl_divs, js_divs, decision_flips_arr, local_min_kl, num_neg_kl, local_min_js, num_neg_js
 
 
 def binary_search_for_first_ind_with_num_geq(arr, x):
@@ -549,7 +639,8 @@ def get_randomized_order_copies_of_lists(lists, num_copies):
 
 
 def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                original_output_filename, dec_flip_stats_filename, rand_results_filename):
+                                original_output_filename, dec_flip_stats_filename, rand_results_filename,
+                                suppress_warnings=False):
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
     next_available_ind = 1
 
@@ -571,7 +662,8 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
     corr_output_yielder = iter(OriginalOutputDistIterator(original_output_filename))
     starting_ind_of_batch = 1
     havent_found_start_yet = True
-    for batch_tup in tqdm(batch_iterator, desc="Calculating decision flip and rand stats"):
+    for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
+                          desc="Calculating decision flip and rand stats"):
         list_of_lens = batch_tup[2]
         if starting_ind_of_batch + len(list_of_lens) <= next_available_ind:
             starting_ind_of_batch += len(list_of_lens)
@@ -604,14 +696,17 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
 
         lists_to_write_from_top = get_dec_flip_info_for_batch(inds_in_dec_order, corr_instance_inds, original_labels,
                                                               corr_vects, original_attn_weights, classifier,
-                                                              print_10_output_for_debugging=False)
+                                                              print_10_output_for_debugging=False,
+                                                              suppress_warnings=suppress_warnings)
         lists_to_write_from_bottom = get_dec_flip_info_for_batch(inds_in_inc_order, corr_instance_inds, original_labels,
-                                                                 corr_vects, original_attn_weights, classifier)
+                                                                 corr_vects, original_attn_weights, classifier,
+                                                                 suppress_warnings=suppress_warnings)
         for i in range(num_rand_samples_to_take):
             rand_results, weight_kl_js = get_dec_flip_info_for_batch(inds_in_rand_orders[i], corr_instance_inds,
                                                                      original_labels, corr_vects,
                                                                      original_attn_weights, classifier,
-                                                                    get_attnvals_kljsdivs_for_first_inds=original_dists)
+                                                                    get_attnvals_kljsdivs_for_first_inds=original_dists,
+                                                                     suppress_warnings=suppress_warnings)
             assert len(rand_results) == len(lists_to_write_from_top)
             for local_inst_ind in range(len(rand_results)):
                 w = weight_kl_js[local_inst_ind]
@@ -717,7 +812,7 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
     
 
 def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                original_output_filename, dec_flip_rand_nontop_stats_filename):
+                                original_output_filename, dec_flip_rand_nontop_stats_filename, suppress_warnings=False):
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
     next_available_ind = 1
     lists_to_write_to_file = []
@@ -726,7 +821,8 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
     num_neg_jsdivs = 0
     num_pos_kldivs = 0
     num_pos_jsdivs = 0
-    for batch_tup in tqdm(batch_iterator, desc="Calculating rand nontop decision flip stats"):
+    for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
+                          desc="Calculating rand nontop decision flip stats"):
         list_of_lens = batch_tup[2]
         original_attn_weights = util.move_to_device(batch_tup[0], gpu)
         corr_vects = util.move_to_device(batch_tup[1], gpu)
@@ -759,7 +855,8 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
         lists_to_write, val_kldivs = get_dec_flip_info_for_batch(rand_nontop_ind_lists, corr_instance_inds, original_labels,
                                                               corr_vects, original_attn_weights, classifier,
                                                               print_10_output_for_debugging=False,
-                                                     get_attnvals_kljsdivs_for_first_inds=original_dists)
+                                                     get_attnvals_kljsdivs_for_first_inds=original_dists,
+                                                                 suppress_warnings=suppress_warnings)
         next_available_ind += len(list_of_lens)
         for i in range(len(list_of_lens)):
             weight_kl_js = val_kldivs[i]
@@ -811,7 +908,7 @@ def write_part_of_header_and_reorder(header_piece, ind_offset, f, rand_result_li
 
 def get_dec_flip_info_for_batch(sorted_attn_inds, corr_instance_inds, original_labels, corr_vects,
                                 original_attn_weights, classifier, get_attnvals_kljsdivs_for_first_inds=None,
-                                print_10_output_for_debugging=False):
+                                print_10_output_for_debugging=False, suppress_warnings=False):
     lists_to_write_to_file = []
     done = False
     new_attn_weights = original_attn_weights.clone()
@@ -852,8 +949,8 @@ def get_dec_flip_info_for_batch(sorted_attn_inds, corr_instance_inds, original_l
         if first_time and get_attnvals_kljsdivs_for_first_inds is not None:
             old_log_dists = get_attnvals_kljsdivs_for_first_inds
             new_log_dists = mod_output.cpu().numpy()
-            kl_divs = get_kl_div_of_dists(old_log_dists, new_log_dists)
-            js_divs = get_js_div_of_dists(old_log_dists, new_log_dists)
+            kl_divs = get_kl_div_of_dists(old_log_dists, new_log_dists, suppress_warnings=suppress_warnings)
+            js_divs = get_js_div_of_dists(old_log_dists, new_log_dists, suppress_warnings=suppress_warnings)
             for i in range(cur_num_instances_remaining):
                 val_kldivs[i].append(kl_divs[i])
                 val_kldivs[i].append(js_divs[i])
@@ -904,7 +1001,7 @@ def get_dec_flip_info_for_batch(sorted_attn_inds, corr_instance_inds, original_l
 
 def get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
                                        corresponding_vects, list_of_lens, list_of_original_log_np_arrays,
-                                       zero_out_by=None):
+                                       zero_out_by=None, suppress_warnings=False):
     attn_zero_highest, attn_zero_2ndhighest, attn_zero_lowest, attn_zero_2ndlowest = \
         make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(original_attn_weights,
                                                                        other_arr_to_sort_by=zero_out_by)
@@ -922,14 +1019,20 @@ def get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_we
     output_dict_zero_second_highest = classifier(corresponding_vects, attn_zero_2ndhighest)
     output_dict_zero_lowest = classifier(corresponding_vects, attn_zero_lowest)
     output_dict_zero_second_lowest = classifier(corresponding_vects, attn_zero_2ndlowest)
-    kl_divs_1, js_divs_1, decision_flips_arr_1 = \
-        get_onerun_diff_from_original_stats(output_dict_zero_highest, list_of_original_log_np_arrays)
-    kl_divs_2, js_divs_2, decision_flips_arr_2 = \
-        get_onerun_diff_from_original_stats(output_dict_zero_second_highest, list_of_original_log_np_arrays)
-    kl_divs_1_low, js_divs_1_low, decision_flips_arr_1_low = \
-        get_onerun_diff_from_original_stats(output_dict_zero_lowest, list_of_original_log_np_arrays)
-    kl_divs_2_low, js_divs_2_low, decision_flips_arr_2_low = \
-        get_onerun_diff_from_original_stats(output_dict_zero_second_lowest, list_of_original_log_np_arrays)
+    kl_divs_1, js_divs_1, decision_flips_arr_1, local_min_kl_1, num_neg_kl_1, local_min_js_1, num_neg_js_1 = \
+        get_onerun_diff_from_original_stats(output_dict_zero_highest, list_of_original_log_np_arrays,
+                                            suppress_warnings=suppress_warnings)
+    kl_divs_2, js_divs_2, decision_flips_arr_2, local_min_kl_2, num_neg_kl_2, local_min_js_2, num_neg_js_2 = \
+        get_onerun_diff_from_original_stats(output_dict_zero_second_highest, list_of_original_log_np_arrays,
+                                            suppress_warnings = suppress_warnings)
+    kl_divs_1_low, js_divs_1_low, decision_flips_arr_1_low, local_min_kl_1_low, num_neg_kl_1_low, local_min_js_1_low, \
+    num_neg_js_1_low = \
+        get_onerun_diff_from_original_stats(output_dict_zero_lowest, list_of_original_log_np_arrays,
+                                            suppress_warnings=suppress_warnings)
+    kl_divs_2_low, js_divs_2_low, decision_flips_arr_2_low, local_min_kl_2_low, num_neg_kl_2_low, local_min_js_2_low, \
+    num_neg_js_2_low = \
+        get_onerun_diff_from_original_stats(output_dict_zero_second_lowest, list_of_original_log_np_arrays,
+                                            suppress_warnings=suppress_warnings)
 
     batch_results_lists = []
     for i in range(len(list_of_lens)):
@@ -948,17 +1051,27 @@ def get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_we
                           str(decision_flips_arr_2_low[i])]
         batch_results_lists.append(list_to_append)
         next_available_ind += 1
-    return next_available_ind, batch_results_lists
-
+    return next_available_ind, batch_results_lists, ((local_min_kl_1, num_neg_kl_1, local_min_js_1, num_neg_js_1),
+                                                     (local_min_kl_2, num_neg_kl_2, local_min_js_2, num_neg_js_2),
+                                                     (local_min_kl_1_low, num_neg_kl_1_low, local_min_js_1_low,
+                                                      num_neg_js_1_low),
+                                                     (local_min_kl_2_low, num_neg_kl_2_low, local_min_js_2_low,
+                                                      num_neg_js_2_low))
 
 
 def get_first_v_second_stats(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             original_output_filename, first_v_second_filename):
+                             original_output_filename, first_v_second_filename, suppress_warnings=False):
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
     corr_output_yielder = iter(OriginalOutputDistIterator(original_output_filename))
     next_available_ind = 1
     lists_to_write_to_file = []
-    for batch_tup in batch_iterator:
+    total_num_dist_calcs = 0
+    total_num_negative_kl_dist_calcs = 0
+    total_num_negative_js_dist_calcs = 0
+    min_calculated_kl = 1000
+    min_calculated_js = 1000
+    for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
+                          desc='Collecting highest-attn-weight vs second-highest-attn-weight stats'):
         original_attn_weights = batch_tup[0]
         list_of_lens = batch_tup[2]
 
@@ -967,11 +1080,31 @@ def get_first_v_second_stats(classifier, attn_weight_filename, corr_vector_dir, 
             list_of_original_log_np_arrays.append(next(corr_output_yielder))
         list_of_original_log_np_arrays = np.array(list_of_original_log_np_arrays)
 
-        next_available_ind, list_of_batch_results = \
+        next_available_ind, list_of_batch_results, neg_calculation_artifacts_info_tup = \
             get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
-                                               batch_tup[1], batch_tup[2], list_of_original_log_np_arrays)
+                                               batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
+                                               suppress_warnings=suppress_warnings)
         for batch_results_list in list_of_batch_results:
             lists_to_write_to_file.append(batch_results_list)
+        total_num_dist_calcs += (len(list_of_lens) * len(neg_calculation_artifacts_info_tup))
+        for i in range(len(neg_calculation_artifacts_info_tup)):
+            local_tup = neg_calculation_artifacts_info_tup[i]
+            if local_tup[0] < min_calculated_kl:
+                min_calculated_kl = local_tup[0]
+            total_num_negative_kl_dist_calcs += local_tup[1]
+            if local_tup[2] < min_calculated_js:
+                min_calculated_js = local_tup[2]
+            total_num_negative_js_dist_calcs += local_tup[3]
+    if total_num_dist_calcs > 0:
+        # at least one instance was iterated over
+        print(str(total_num_negative_kl_dist_calcs) + ' / ' + str(total_num_dist_calcs) +
+              ' calculated KL divs from original output dist to modified outputs were negative; ' +
+              'lowest calculated KL div was ' + str(min_calculated_kl) +
+              ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
+        print(str(total_num_negative_js_dist_calcs) + ' / ' + str(total_num_dist_calcs) +
+              ' calculated JS divs from original output dist to modified outputs were negative; ' +
+              'lowest calculated JS div was ' + str(min_calculated_js) +
+              ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
 
     with open(first_v_second_filename, 'w') as f:
         f.write('id,kl_div_zero_highest,js_div_zero_highest,dec_flip_highest,kl_div_zero_2ndhighest,' +
@@ -985,7 +1118,7 @@ def get_first_v_second_stats(classifier, attn_weight_filename, corr_vector_dir, 
 
 
 def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file):
+                                         unchanged_results_filename, test_data_file, suppress_warnings=False):
     test_generator = test_iterator(test_data._read(test_data_file),
                                    num_epochs=1,
                                    shuffle=False)
@@ -1013,7 +1146,8 @@ def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, a
         original_labels_guessed = np.argmax(output_log_dists, axis=1)
         actual_labels = batch["label"].data.cpu().numpy()
         output_dist_entropies = get_entropy_of_dists(output_log_dists,
-                                                     [output_log_dists.shape[1]] * output_log_dists.shape[0])
+                                                     [output_log_dists.shape[1]] * output_log_dists.shape[0],
+                                                     suppress_warnings=suppress_warnings)
         for i in range(actual_labels.shape[0]):
             instance_info = [next_available_instance_ind,
                              actual_labels[i],
@@ -1030,18 +1164,22 @@ def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, a
         corr_ind = corr_inds[i]
         attn_vals = attn_dists[i]
         log_attn_vals = log_attn_dists[i]
-        attn_entropy = get_entropy_of_dists(np.array([log_attn_vals]), [len(log_attn_vals)])[0]
+        attn_entropy = get_entropy_of_dists(np.array([log_attn_vals]), [len(log_attn_vals)],
+                                            suppress_warnings=suppress_warnings)[0]
         _, ind_of_highest, _, ind_of_second_highest, _, ind_of_lowest, _, ind_of_second_lowest = \
             get_two_highest_and_inds(log_attn_vals)
         ratio_of_2nd_to_1st = np.exp(log_attn_vals[ind_of_second_highest] - log_attn_vals[ind_of_highest])
         ratio_of_2nd_to_1st_low = np.exp(log_attn_vals[ind_of_second_lowest] - log_attn_vals[ind_of_lowest])
         entropy_of_1st_2nd_dist = get_entropy_of_dists(np.array([[log_attn_vals[ind_of_highest],
-                                                                  log_attn_vals[ind_of_second_highest]]]), [2])[0]
+                                                                  log_attn_vals[ind_of_second_highest]]]), [2],
+                                                       suppress_warnings=suppress_warnings)[0]
         entropy_of_1st_2nd_dist_low = get_entropy_of_dists(np.array([[log_attn_vals[ind_of_lowest],
-                                                                      log_attn_vals[ind_of_second_lowest]]]), [2])[0]
+                                                                      log_attn_vals[ind_of_second_lowest]]]), [2],
+                                                           suppress_warnings=suppress_warnings)[0]
         ratio_of_last_to_1st = np.exp(log_attn_vals[ind_of_lowest] - log_attn_vals[ind_of_highest])
         entropy_of_last_1st_dist = get_entropy_of_dists(np.array([[log_attn_vals[ind_of_lowest],
-                                                                   log_attn_vals[ind_of_highest]]]), [2])[0]
+                                                                   log_attn_vals[ind_of_highest]]]), [2],
+                                                        suppress_warnings=suppress_warnings)[0]
         assert list_of_instance_infos[corr_ind - 1][0] == corr_ind, str(list_of_instance_infos[corr_ind - 1][0]) + \
                                                                     ", " + str(corr_ind)
         list_to_add_to = list_of_instance_infos[corr_ind - 1]
@@ -1085,14 +1223,13 @@ def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, a
 
 
 def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_weight_filename,
-              name_of_layer_to_replace, gpu, loading_han):
+              name_of_layer_to_replace, gpu, loading_han, suppress_warnings=False):
     if not s_dir.endswith('/'):
         s_dir += '/'
     training_config_filename = s_dir + "config.json"
     assert os.path.isfile(training_config_filename), "Could not find " + training_config_filename
     batch_size, max_samples_per_batch, vocab_dir = \
         get_batch_size_max_samples_per_batch_from_config_file(training_config_filename)
-    #batch_size = 1
     dataset_reader, dataset_iterator, total_num_test_instances = \
         set_up_inorder_test_loader(test_data_file, batch_size, max_samples_per_batch, vocab_dir, s_dir,
                                    loading_han=loading_han)
@@ -1112,16 +1249,19 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
                                                                 name_of_attn_layer_to_replace=attn_layer_to_replace,
                                                                 cuda_device=gpu)
     do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file)
+                                         unchanged_results_filename, test_data_file,
+                                         suppress_warnings=suppress_warnings)
     get_first_v_second_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             unchanged_results_filename, first_v_second_filename)
+                             unchanged_results_filename, first_v_second_filename, suppress_warnings=suppress_warnings)
     get_dec_flip_stats_and_rand(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                unchanged_results_filename, dec_flip_stats_filename, rand_results_filename)
+                                unchanged_results_filename, dec_flip_stats_filename, rand_results_filename,
+                                suppress_warnings=suppress_warnings)
     get_gradient_based_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             unchanged_results_filename, grad_based_stats_filename)
+                             unchanged_results_filename, grad_based_stats_filename, suppress_warnings=suppress_warnings)
     get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                       unchanged_results_filename, dec_flip_rand_nontop_stats_filename)
-    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename)
+                                       unchanged_results_filename, dec_flip_rand_nontop_stats_filename,
+                                       suppress_warnings=suppress_warnings)
+    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=suppress_warnings)
 
 
 def main():
@@ -1136,14 +1276,16 @@ def main():
                         help="Which GPU device to run the testing on")
     parser.add_argument("--optional-folder-tag", type=str, required=False, default='',
                         help='Tag to tack onto output folder')
+    parser.add_argument("--print-all-warnings", required=False, type=str, default='False',
+                        help='Whether to print all negative-entropy-calculation warnings instead of just a summary')
     parser.add_argument("--base-serialized-models-dir", type=str, required=False,
-                        default="/homes/gws/sofias6/models/",
+                        default=base_serialized_models_directory,
                         help="The dir to prepend to --model-folder-name")
     parser.add_argument("--base-data-dir", type=str, required=False,
-                        default="/homes/gws/sofias6/data/",
+                        default=base_data_directory,
                         help="The dir to prepend to --test-data-file")
     parser.add_argument("--base-output-dir", type=str, required=False,
-                        default='/homes/gws/sofias6/attn-test-output/',
+                        default=base_output_directory,
                         help="The local name of the output directory for this training run")
     parser.add_argument("--attn-weight-filename", type=str, required=False,
                         default='attn_weights_by_instance.txt',
@@ -1152,7 +1294,11 @@ def main():
     
     import_submodules('attn_tests_lib')
     import_submodules('textcat')
-    
+
+    if args.print_all_warnings.lower().startswith('f'):
+        suppress_warnings = True
+    else:
+        suppress_warnings = False
     is_han = ('-han' in args.model_folder_name)
     if is_han:
         attn_layer_to_replace = "_sentence_attention"
@@ -1181,7 +1327,8 @@ def main():
     args.model_folder_name = args.base_serialized_models_dir + args.model_folder_name
     args.test_data_file = args.base_data_dir + args.test_data_file
     run_tests(args.model_folder_name, output_dir, args.test_data_file, attn_layer_to_replace,
-              args.attn_weight_filename, attn_layer_to_replace, args.gpu, model_is_han)
+              args.attn_weight_filename, attn_layer_to_replace, args.gpu, model_is_han,
+              suppress_warnings=suppress_warnings)
 
 
 if __name__ == '__main__':

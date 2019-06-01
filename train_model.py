@@ -5,6 +5,8 @@ import re
 from glob import glob
 from typing import Iterable, NamedTuple
 import torch
+from default_directories import base_serialized_models_dir
+from default_directories import dir_with_config_files as directory_with_config_files
 from allennlp_internal_functions import dump_metrics, datasets_from_params, cleanup_global_logging, \
                                         get_frozen_and_tunable_parameter_names
 
@@ -28,7 +30,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 corresponding_config_files = {'hanrnn': '_han_from_paper.jsonnet',
                               'hanconv': '_han_with_convs.jsonnet',
                               'flanrnn': '_flan_with_rnns.jsonnet',
-                              'flanconv': '_flan_with_convs.jsonnet'}
+                              'flanconv': '_flan_with_convs.jsonnet',
+                              'han_encless': '_han_no_encoders.jsonnet',
+                              'flan_encless': '_flan_no_encoders.jsonnet'}
 
 
 def edit_config_file_to_have_gpu(filename, gpu_num):
@@ -752,7 +756,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model", type=str, required=True,
                         help="The type of model to train",
-                        choices=['hanrnn', 'hanconv', 'flanrnn', 'flanconv'])
+                        choices=['hanrnn', 'hanconv', 'flanrnn', 'flanconv', 'han_encless', 'flan_encless'])
     parser.add_argument("--dataset-name", type=str, required=True,
                         help="Which dataset to train the model on",
                         choices=['amazon', 'yahoo10cat', 'yelp', 'imdb', 'whateverDatasetYouHaveInMind'])
@@ -770,10 +774,10 @@ def main():
     parser.add_argument("--continue-on-same-config-file", type=bool, required=False, default=False,
                         help="Whether we're resuming from an interrupted run")
     parser.add_argument("--output-dir-base", required=False,
-                        default="/homes/gws/sofias6/models/",
+                        default=base_serialized_models_dir,
                         help="Which directory each individual model's serialization directory sits in")
-    parser.add_argument("--dir-with-config-files", required=False,
-                        default="/homes/gws/sofias6/attn-tests/attn_tests/configs/",
+    parser.add_argument("--dir-with-config-files", required=False, type=str,
+                        default=directory_with_config_files,
                         help="Base directory for all config files")
     args = parser.parse_args()
     if not args.output_dir_base.endswith('/'):

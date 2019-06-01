@@ -14,6 +14,8 @@ import matplotlib
 from math import fabs
 matplotlib.use('Agg')
 import os
+from default_directories import base_data_dir as base_data_directory
+from default_directories import base_output_dir as base_output_directory
 
 
 ID = 0
@@ -595,11 +597,11 @@ def test_needed_rem_lots_vs_not(table):
     print("For needed-to-remove-little, mean attn entropy was " + str(little_m) + " (std dev " + str(little_sd) + ")")
 
 
-def get_vsrand_2x2_decflip_jointdist(table, is_han):
+def get_vsrand_2x2_decflip_jointdist(table, label, nonrand_column, is_han):
     table = table[table[:, ATTN_SEQ_LEN] > 1]  # get rid of seqs of length 1 for this
     rand_flipped_decision = (table[:, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE] != -1)
-    top_flipped_decision = (table[:, DEC_FLIP_ZERO_HIGHEST] != -1)
-    print_2x2_decflip_jointdist(rand_flipped_decision, top_flipped_decision, "Top vs. rand nontop weight", table)
+    top_flipped_decision = (table[:, nonrand_column] != -1)
+    print_2x2_decflip_jointdist(rand_flipped_decision, top_flipped_decision, label, table)
 
 
 def get_vs2nd_2x2_decflip_jointdist(table):
@@ -781,13 +783,13 @@ def write_files_of_fracremoved_vs_attndiv(table, model_folder_name, seq_len_grea
             f.write(str(float(js_col[i])) + '\n')
 
 
-def grad_more_efficient_attn_uniformity_test(table, mask_where_grad_more_efficient):
+def grad_more_efficient_attn_uniformity_test(table, mask_where_grad_more_efficient, name_of_category):
     # done by looking at JS divergence of attention from uniform.
     grad_divs = table[:, ATTN_JS_DIV_FROM_UNIF][mask_where_grad_more_efficient]
     other_divs = table[:, ATTN_JS_DIV_FROM_UNIF][np.logical_not(mask_where_grad_more_efficient)]
     grad_div_mean = np.mean(grad_divs)
     other_divs_mean = np.mean(other_divs)
-    print("Mean attn-from-unif JS divs:   Grad-more-efficient instances:" + str(grad_div_mean) +
+    print("Mean attn-from-unif JS divs:   " + name_of_category + "-more-efficient instances:" + str(grad_div_mean) +
           "   All others:" + str(other_divs_mean))
     if grad_div_mean >= other_divs_mean:
         print("Means already contradict hypothesis; not bothering to run McNemar's.")
@@ -798,6 +800,89 @@ def grad_more_efficient_attn_uniformity_test(table, mask_where_grad_more_efficie
         #                  'attn-unif JS divs being lower for gme instances than others')
 
 
+def print_per_instance_removal_efficiency_comparison(table, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1,
+                                                     NEEDED_REM_TOP_X_FOR_DECFLIP_cat2, cat1_name, cat2_name,
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1,
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2):
+    table_of_seqs_longer_than_1_singleneg1 = table[
+        np.logical_and(np.logical_or(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] == -1,
+                                     table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2] == -1),
+                       table[:, ATTN_SEQ_LEN] > 1)]
+    table_of_seqs_longer_than_1_singleneg1 = table_of_seqs_longer_than_1_singleneg1[
+        np.logical_not(np.logical_and(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] == -1,
+                                      table_of_seqs_longer_than_1_singleneg1[:,
+                                      NEEDED_REM_TOP_X_FOR_DECFLIP_cat2] == -1))]
+    table_of_seqs_longer_than_1_no_neg1s = table[np.logical_and(np.logical_and(table[:, ATTN_SEQ_LEN] > 1,
+                                                                               table[:,
+                                                                               NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] != -1),
+                                                                table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2] != -1)]
+    total_num_seqs_longer_than_1 = table_of_seqs_longer_than_1_singleneg1.shape[0] + \
+                                   table_of_seqs_longer_than_1_no_neg1s.shape[0]
+    attn_more_efficient = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] <
+                                     table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2])) + \
+                          int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] >
+                                     table_of_seqs_longer_than_1_singleneg1[:,
+                                     NEEDED_REM_TOP_X_FOR_DECFLIP_cat2]))  # we achieved a decflip with attn, not grad
+
+    mask_for_seqs_longer_than_1_no_neg1s = (np.logical_and(np.logical_and(table[:, ATTN_SEQ_LEN] > 1,
+                                                                          table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] != -1),
+                                                           table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2] != -1))
+    mask_for_seqs_longer_than_1_singleneg1 = (
+        np.logical_and(np.logical_xor(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] == -1,
+                                      table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2] == -1),
+                       table[:, ATTN_SEQ_LEN] > 1))
+    rows_where_cat2_more_efficient = np.logical_or(np.logical_and(mask_for_seqs_longer_than_1_no_neg1s,
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] >
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2]),
+                                                   np.logical_and(mask_for_seqs_longer_than_1_singleneg1,
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] <
+                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2]))
+    grad_more_efficient = np.sum(rows_where_cat2_more_efficient)
+    assert (int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1] >
+                       table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2])) +
+            int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1] <
+                       table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2])) ==
+            grad_more_efficient)
+    assert rows_where_cat2_more_efficient.shape[0] == table.shape[0]
+
+    print()
+    grad_more_efficient_attn_uniformity_test(table, rows_where_cat2_more_efficient, cat2_name)
+
+    both_same = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] ==
+                           table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2])) + \
+                int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] ==
+                           table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2]))
+    assert (int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1] ==
+                       table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2])) +
+            int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1] ==
+                       table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2])) ==
+            both_same)
+    assert attn_more_efficient + grad_more_efficient + both_same == total_num_seqs_longer_than_1
+    assert np.all(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat1] !=
+                  table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_cat2])
+
+    print("Found " + str(table_of_seqs_longer_than_1_singleneg1.shape[0]) +
+          " cases where exactly one of either " + cat1_name + " or " + cat2_name +
+          " never flipped the decision; leaving those in for analysis.")
+    print("REMOVING FROM ANALYSIS the " +
+          str(np.sum(table[:, ATTN_SEQ_LEN] == 1)) + " cases with an attention length of 1")
+    temp_table = table[table[:, ATTN_SEQ_LEN] > 1]
+    print("REMOVING FROM ANALYSIS the " +
+          str(np.sum(np.logical_and(temp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat1] == -1,
+                                    temp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_cat2] == -1))) +
+          " OTHER cases where neither " + cat1_name + " nor " + cat2_name + " EVER flipped the decision")
+    print("Cases where rem_by_highest_" + cat1_name + " more efficient than rem_by_highest_" + cat2_name + ": ", end='')
+    print(str(attn_more_efficient) + "\t (" + str(attn_more_efficient / total_num_seqs_longer_than_1) +
+          " of cases with attn len > 1)")
+    print("Cases where rem_by_highest_" + cat1_name + " less efficient than rem_by_highest_" + cat2_name + ": ", end='')
+    print(str(grad_more_efficient) + "\t (" + str(grad_more_efficient / total_num_seqs_longer_than_1) +
+          " of cases with attn len > 1)")
+    print("Cases where both equally efficient: ", end='')
+    print(str(both_same) + "\t (" + str(both_same / total_num_seqs_longer_than_1) + " of cases with attn len > 1)")
+    print()
+    return rows_where_cat2_more_efficient
+
+
 def main(constrain_to_guessed_label=None):
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -805,13 +890,13 @@ def main(constrain_to_guessed_label=None):
                         help="The local name of the directories associated with the model")
     parser.add_argument("--write-attnperf-labels", type=str, required=False, default="True")
     parser.add_argument("--base-output-dir", type=str, required=False,
-                        default='/homes/gws/sofias6/attn-test-output/',
+                        default=base_output_directory,
                         help="The name of the top-level output directory containing other output directories")
     parser.add_argument("--base-images-dir", type=str, required=False,
                         default='imgs/',
                         help="The directory in which to store any created plots or histograms")
     parser.add_argument("--top-level-data-dir", type=str, required=False,
-                        default='/homes/gws/sofias6/data/',
+                        default=base_data_directory,
                         help='Top level dir containing data (some info will be written there)')
     args = parser.parse_args()
     if args.write_attnperf_labels.lower().startswith('t'):
@@ -880,86 +965,29 @@ def main(constrain_to_guessed_label=None):
     report_frac_for_model('from_bottom', table)
     report_frac_for_model('from_top_probmass', table)
 
-    table_of_seqs_longer_than_1_singleneg1 = table[np.logical_and(np.logical_or(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == -1,
-                                                                                table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] == -1),
-                                                                  table[:, ATTN_SEQ_LEN] > 1)]
-    table_of_seqs_longer_than_1_singleneg1 = table_of_seqs_longer_than_1_singleneg1[np.logical_not(np.logical_and(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == -1,
-                                                                                                                  table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] == -1))]
-    table_of_seqs_longer_than_1_no_neg1s = table[np.logical_and(np.logical_and(table[:, ATTN_SEQ_LEN] > 1,
-                                                                               table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] != -1),
-                                                                table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] != -1)]
-    total_num_seqs_longer_than_1 = table_of_seqs_longer_than_1_singleneg1.shape[0] + \
-                                   table_of_seqs_longer_than_1_no_neg1s.shape[0]
-    attn_more_efficient = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP] <
-                                     table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD])) + \
-                          int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP] >
-                                     table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))  # we achieved a decflip with attn, not grad
-    assert (int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] <
-                       table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) +
-            int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] >
-                       table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) ==
-            attn_more_efficient)
     """
     grad_more_efficient = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP] >
                                      table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD])) + \
                           int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP] <
                                      table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))
     """
-    mask_for_seqs_longer_than_1_no_neg1s = (np.logical_and(np.logical_and(table[:, ATTN_SEQ_LEN] > 1,
-                                                                          table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] != -1),
-                                                           table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] != -1))
-    mask_for_seqs_longer_than_1_singleneg1 = (np.logical_and(np.logical_xor(table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] == -1,
-                                                                            table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD] == -1),
-                                                             table[:, ATTN_SEQ_LEN] > 1))
-    rows_where_grad_more_efficient = np.logical_or(np.logical_and(mask_for_seqs_longer_than_1_no_neg1s,
-                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] >
-                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]),
-                                                   np.logical_and(mask_for_seqs_longer_than_1_singleneg1,
-                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP] <
-                                                                  table[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))
-    grad_more_efficient = np.sum(rows_where_grad_more_efficient)
-    assert (int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] >
-                       table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) +
-            int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] <
-                       table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) ==
-            grad_more_efficient)
-    assert rows_where_grad_more_efficient.shape[0] == table.shape[0]
-
-    grad_more_efficient_attn_uniformity_test(table, rows_where_grad_more_efficient)
-
+    print_per_instance_removal_efficiency_comparison(table, NEEDED_REM_TOP_X_FOR_DECFLIP,
+                                                     NEEDED_REM_TOP_X_FOR_DECFLIP_GRADMULT, 'attn', 'gradmult',
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP,
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT)
+    rows_where_grad_more_efficient = print_per_instance_removal_efficiency_comparison(table,
+                                                                                      NEEDED_REM_TOP_X_FOR_DECFLIP,
+                                                                                      NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD,
+                                                                                      'attn', 'grad',
+                                                                                      NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP,
+                                                                                      NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD)
     if write_attnperf:
         write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name, args.top_level_data_dir)
-        
-    both_same = int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP] ==
-                           table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD])) + \
-                int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP] ==
-                           table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))
-    assert (int(np.sum(table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] ==
-                       table_of_seqs_longer_than_1_no_neg1s[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) +
-            int(np.sum(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] ==
-                       table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD])) ==
-            both_same)
-    assert attn_more_efficient + grad_more_efficient + both_same == total_num_seqs_longer_than_1
-    assert np.all(table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP] !=
-                  table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD])
-    print("Found " + str(table_of_seqs_longer_than_1_singleneg1.shape[0]) +
-          " cases where exactly one of either attn or grad never flipped the decision; leaving those in for analysis.")
-    print("REMOVING FROM ANALYSIS the " +
-          str(np.sum(table[:, ATTN_SEQ_LEN] == 1)) + " cases with an attention length of 1")
-    temp_table = table[table[:, ATTN_SEQ_LEN] > 1]
-    print("REMOVING FROM ANALYSIS the " +
-          str(np.sum(np.logical_and(temp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] == -1,
-                                    temp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] == -1))) +
-          " OTHER cases where neither attn nor grad EVER flipped the decision")
-    print("Cases where rem_by_highest_attn more efficient than rem_by_highest_grad: ", end='')
-    print(str(attn_more_efficient) + "\t (" + str(attn_more_efficient/total_num_seqs_longer_than_1) +
-          " of cases with attn len > 1)")
-    print("Cases where rem_by_highest_attn less efficient than rem_by_highest_grad: ", end='')
-    print(str(grad_more_efficient) + "\t (" + str(grad_more_efficient / total_num_seqs_longer_than_1) +
-          " of cases with attn len > 1)")
-    print("Cases where both equally efficient: ", end='')
-    print(str(both_same) + "\t (" + str( both_same / total_num_seqs_longer_than_1) + " of cases with attn len > 1)")
-    get_vsrand_2x2_decflip_jointdist(table, is_han)
+
+    get_vsrand_2x2_decflip_jointdist(table, "Top-attn vs. rand nontop weight", DEC_FLIP_ZERO_HIGHEST, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-GRAD vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRAD, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-GRADMULT vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRADMULT, is_han)
+    print()
     get_vs2nd_2x2_decflip_jointdist(table)
     print()
     get_default_class_info(table)
@@ -989,7 +1017,7 @@ def test_js_divs():
     parser.add_argument("--model-folder-name", type=str, required=True,
                         help="The local name of the directories associated with the model")
     parser.add_argument("--base-output-dir", type=str, required=False,
-                        default='/homes/gws/sofias6/attn-test-output/',
+                        default=base_output_directory,
                         help="The name of the top-level output directory containing other output directories")
     parser.add_argument("--base-images-dir", type=str, required=False,
                         default='imgs/',
