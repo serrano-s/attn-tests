@@ -782,6 +782,8 @@ def main():
     args = parser.parse_args()
     if not args.output_dir_base.endswith('/'):
         args.output_dir_base += '/'
+    if not os.path.isdir(args.output_dir_base):
+        os.makedirs(args.output_dir_base)
     if not args.dir_with_config_files.endswith('/'):
         args.dir_with_config_files += '/'
     output_dir = args.output_dir_base + args.dataset_name + '-' + args.model

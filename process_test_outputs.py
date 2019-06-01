@@ -23,6 +23,7 @@ matplotlib.use('Agg')
 import os
 from default_directories import base_data_dir as base_data_directory
 from default_directories import base_output_dir as base_output_directory
+from default_directories import images_dir as base_image_dir
 
 
 ID = 0
@@ -373,6 +374,10 @@ def report_frac_for_model(which, table):
         vals = table[np.logical_and(table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1,
                                     table[:, ATTN_SEQ_LEN] > 1)][:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT]
         print("Removing from top **GRADIENTS * ATTNWEIGHTS**: ", end='')
+    elif which == 'from_top_gradsignmult':
+        vals = table[np.logical_and(table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT] != -1,
+                                    table[:, ATTN_SEQ_LEN] > 1)][:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT]
+        print("Removing from top **GRADIENT SIGN * ATTNWEIGHTS**: ", end='')
     elif which == 'from_top_probmass':
         vals = table[np.logical_and(table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP] != -1,
                                     table[:, ATTN_SEQ_LEN] > 1)][:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP]
@@ -985,7 +990,7 @@ def main(constrain_to_guessed_label=None):
                         default=base_output_directory,
                         help="The name of the top-level output directory containing other output directories")
     parser.add_argument("--base-images-dir", type=str, required=False,
-                        default='imgs/',
+                        default=base_image_dir,
                         help="The directory in which to store any created plots or histograms")
     parser.add_argument("--top-level-data-dir", type=str, required=False,
                         default=base_data_directory,
@@ -1059,6 +1064,7 @@ def main(constrain_to_guessed_label=None):
     print("Test set accuracy: " + str(get_test_accuracy(table)))
     print_label_distrib_for_rows(table, "ALL")
     print()
+    report_frac_for_model('from_top_gradsignmult', table)
     report_frac_for_model('from_top_grad_mult', table)
     report_frac_for_model('from_top_grad', table)
     report_frac_for_model('from_top', table)
@@ -1130,7 +1136,7 @@ def test_js_divs():
                         default=base_output_directory,
                         help="The name of the top-level output directory containing other output directories")
     parser.add_argument("--base-images-dir", type=str, required=False,
-                        default='imgs/',
+                        default=base_image_dir,
                         help="The directory in which to store any created plots or histograms")
     args = parser.parse_args()
     base_output_dir = args.base_output_dir

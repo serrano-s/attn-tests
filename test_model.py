@@ -1528,6 +1528,8 @@ def main():
         args.base_data_dir += '/'
     if not args.base_output_dir.endswith('/'):
         args.base_output_dir += '/'
+    if not os.path.isdir(args.base_output_dir):
+        os.makedirs(args.base_output_dir)
     if not args.model_folder_name.endswith('/'):
         args.model_folder_name += '/'
     assert os.path.isdir(args.base_output_dir)

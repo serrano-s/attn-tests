@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 */.DS_Store
 *.DS_Store
+imgs/
+attn-test-output/
+models/

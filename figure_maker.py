@@ -25,6 +25,12 @@ from math import ceil
 from random import random
 
 from default_directories import base_output_dir
+from default_directories import images_dir
+
+if not os.path.isdir(images_dir):
+    os.makedirs(images_dir)
+if not images_dir.endswith('/'):
+    images_dir += '/'
 
 def get_filenames_for_subdir(mid_dir):
     global base_output_dir
@@ -92,7 +98,10 @@ from process_test_outputs import EXTRACTED_SINGLE_ATTN_WEIGHT_END, EXTRACTED_SIN
         NONTOPBYGRAD_RAND_JS_DIV, NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, \
         NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT, NONTOPBYGRADMULT_RAND_KL_DIV, NONTOPBYGRADMULT_RAND_JS_DIV, \
         NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT, \
-        NONTOPBYGRADSIGNMULT_RAND_KL_DIV, NONTOPBYGRADSIGNMULT_RAND_JS_DIV
+        NONTOPBYGRADSIGNMULT_RAND_KL_DIV, NONTOPBYGRADSIGNMULT_RAND_JS_DIV, ATTN_SEQ_LEN, \
+        NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP, NEEDED_REM_TOP_X_FOR_DECFLIP, ID, \
+        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP, EXTRACTED_SINGLE_ATTN_WEIGHT_START, JS_DIV_ZERO_HIGHEST, \
+        JS_DIV_ZERO_2NDHIGHEST, DEC_FLIP_ZERO_HIGHEST, DEC_FLIP_ZERO_2NDHIGHEST
 
 yahoo_han_mask = yahoo_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1
 imdb_han_mask = imdb_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1
@@ -330,7 +339,7 @@ def make_kdeplot(tuples_of_title_x_y, filename):
     #                 cmap = "Blues", shade = True, shade_lowest = False,
     #                 )
     #ax.set_title("Differences in Attention weight ")
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -350,7 +359,7 @@ def make_2x2_vsrand_decflip_violinplot(tuples_of_title_x_y_noneflipped, filename
     data_to_plot = pd.DataFrame(list_of_row_dicts)
     g = sns.catplot(kind='violin', x=x_label, y=y_label, col=title_of_each_graph, hue="No Flips Occurred", palette=None,
                        data=data_to_plot, col_wrap=2, legend=True, split=True, inner=None, orient="h")
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
 
 
 def make_2x2_vsrand_decflip_stackplot(tuples_of_title_x_y_noneflipped, filename, bin_size, vs_avg=True):
@@ -496,7 +505,7 @@ def make_2x2_vsrand_decflip_stackplot(tuples_of_title_x_y_noneflipped, filename,
                                                                   '#FFF1E0', '#D6D6D6', '#E0F6FC', '#B3EBFC',
                                                                   '#90CDFC', '#3AAEFC', '#85B7FF'])
 
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -539,8 +548,25 @@ def make_fracremoved_boxplots(filename, list_of_ordering_names, dataset_ordering
             plt.legend(loc='lower left', prop={'size': 10})
         else:
             plt.legend(loc='upper right', prop={'size': 10})
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
     plt.close(fig)
+
+    if 'HANnoenc' in plot_title:
+        fig = plt.figure(figsize=(12, 2))
+
+        ax = sns.boxplot(x=title_of_each_graph, y=y_axis_title,
+                         hue="Ranking Scheme", palette=palette,
+                         data=data_to_plot)
+        ax.set_title(plot_title)
+        ax.set_yticks([0, .25, .5, .75, 1])
+        ax.legend_.remove()
+        sns.despine(offset=20, trim=True)
+
+        plt.legend(loc='lower left', prop={'size': 10})
+        if filename.endswith('.png'):
+            filename = filename[:filename.rfind('.')]
+        plt.savefig(images_dir + filename + '_withlegend', bbox_inches='tight')
+        plt.close(fig)
 
 
 def make_hists(filename, dataset_xval_tups,
@@ -566,7 +592,7 @@ def make_hists(filename, dataset_xval_tups,
     g.set(xticks=(np.arange(0.0, 1.2, 0.2)))
     g.map(sns.distplot, "Difference in Attention Weights", kde=False, rug=False)
 
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -607,7 +633,7 @@ def make_2x2_regression_set(tuples_of_title_x_y, filename, y_label="Log differen
     plt.xlim(0, 1)
 
     print("Saving file to " + filename)
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(images_dir + filename, bbox_inches='tight')
 
 
 def test_plots():
@@ -835,6 +861,13 @@ def make_boxplots_with_four(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='',
                        yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD][yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] != -1],
                       yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT][
                           yelp_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] != -1])
+    if model_tag.startswith('flanencless'):
+        # print stats on amazon for reporting purposes
+        four_cats = ['random', 'attn', 'grad', 'gradmult']
+        print('Amazon FLANnoenc info:')
+        for i in range(len(four_cats)):
+            vals = amazon_model_tup[i + 1]
+            print('\t' + four_cats[i] + '\t>.25: ' + str(np.sum(vals > .25) / vals.shape[0]) + '\t>.5: ' + str(np.sum(vals > .5) / vals.shape[0]) + '\t>.75: ' + str(np.sum(vals > .75) / vals.shape[0]))
     make_fracremoved_boxplots(model_tag + "_fracremoved_boxplots", list_of_ordering_names,
                               [yahoo_model_tup, imdb_model_tup, amazon_model_tup, yelp_model_tup], model_name)
 
@@ -907,7 +940,7 @@ def make_probmass_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', 
         model = 'flanencless'
         model_name = "FLANnoencs"
         is_han = False
-    list_of_ordering_names = ["Random", "Attention", "Gradient"]
+    list_of_ordering_names = ["Random", "Attention", "Gradient", "Attn * Grad"]
     yahoo_table = dec_table_size_to_keep_x_pct_of_data(1, yahoo_table)
     imdb_table = dec_table_size_to_keep_x_pct_of_data(1, imdb_table)
     amazon_table = dec_table_size_to_keep_x_pct_of_data(1, amazon_table)
@@ -915,19 +948,27 @@ def make_probmass_boxplots(model_tag, yahoo_tag='', imdb_tag='', amazon_tag='', 
     yahoo_model_tup = ("Yahoo",
                        yahoo_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START][yahoo_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START] != -1],
                        yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP][yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP] != -1],
-                       yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1])
+                       yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1],
+                      yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT][
+                          yahoo_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT] != -1])
     imdb_model_tup = ("IMDB",
                        imdb_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START][imdb_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START] != -1],
                        imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP][imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP] != -1],
-                       imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1])
+                       imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1],
+                      imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT][
+                          imdb_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT] != -1])
     amazon_model_tup = ("Amazon",
                        amazon_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START][amazon_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START] != -1],
                        amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP][amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP] != -1],
-                       amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1])
+                       amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1],
+                      amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT][
+                          amazon_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT] != -1])
     yelp_model_tup = ("Yelp",
                        yelp_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START][yelp_table[:, NEEDED_REM_RAND_PROBMASS_FOR_DECFLIP_START] != -1],
                        yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP][yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP] != -1],
-                       yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1])
+                       yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD][yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRAD] != -1],
+                      yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT][
+                      yelp_table[:, NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADMULT] != -1])
     make_fracremoved_boxplots(model_tag + "_probmassremoved_boxplots", list_of_ordering_names,
                               [yahoo_model_tup, imdb_model_tup, amazon_model_tup, yelp_model_tup], model_name,
                               y_axis_title="Probability Mass of Original\nAttention Dist Removed")
@@ -1379,7 +1420,7 @@ def make_histogram_of_x_vals(x_vals):
 
     ax = sns.distplot(x_vals, kde=False, rug=True)
 
-    plt.savefig('test_hist', bbox_inches='tight')
+    plt.savefig(images_dir + 'test_hist', bbox_inches='tight')
     plt.close(fig)
 
 
@@ -1627,7 +1668,7 @@ def main():
     make_probmass_boxplots('hanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
     make_probmass_boxplots('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
 
-    make_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
+    """make_boxplots('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
                             amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
     make_boxplots('hanconv', yahoo_tag='convfix', imdb_tag='convfix',
                   amazon_tag='fiveclass', yelp_tag='fiveclass')
@@ -1635,7 +1676,7 @@ def main():
     make_boxplots('flanconv', yahoo_tag='convfix', imdb_tag='convfix',
                                               amazon_tag='fiveclass', yelp_tag='fiveclass')
     make_boxplots('hanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
-    make_boxplots('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')
+    make_boxplots('flanencless', yahoo_tag='', imdb_tag='', amazon_tag='', yelp_tag='')"""
 
     make_boxplots_with_four('hanrnn', yahoo_tag='postattnfix', imdb_tag='postattnfix',
                   amazon_tag='fiveclassround2-4', yelp_tag='fiveclassround2-5smallerstep')
