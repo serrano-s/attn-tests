@@ -1446,7 +1446,7 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
                                                                 total_num_test_instances, training_config_filename,
                                                                 name_of_attn_layer_to_replace=attn_layer_to_replace,
                                                                 cuda_device=gpu)
-    """do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
+    do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
                                          unchanged_results_filename, test_data_file, is_han=loading_han,
                                          suppress_warnings=suppress_warnings)
     get_first_v_second_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
@@ -1461,8 +1461,7 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
     get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                                        unchanged_results_filename, dec_flip_rand_nontopbyattn_stats_filename,
                                        order_type='attn', suppress_warnings=suppress_warnings)
-    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=suppress_warnings)"""
-
+    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=suppress_warnings)
     get_gradient_and_gradmult_based_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                                           unchanged_results_filename, gradsignmult_based_stats_filename,
                                           grads_have_already_been_collected=True, function_of_grad='gradsignmult',
