@@ -1,4 +1,4 @@
-base_output_dir = '/homes/gws/sofias6/attn-test-output/'
-base_serialized_models_dir = '/homes/gws/sofias6/models/'
-base_data_dir = '/homes/gws/sofias6/data/'
-dir_with_config_files = '/homes/gws/sofias6/attn-tests-fresh/attn_tests/configs/'
+base_output_dir = '../attn-test-output/'
+base_serialized_models_dir = '../models/'
+base_data_dir = '../data/'
+dir_with_config_files = 'configs/'

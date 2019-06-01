@@ -6,8 +6,15 @@ from test_model import dec_flip_stats_fname
 from test_model import rand_results_fname  # this one also has variable-length fields now *shrug*
 from test_model import unchanged_fname  # index this one last because its fields are of variable length
 from test_model import grad_based_stats_fname
-from test_model import dec_flip_rand_nontop_stats_fname
+try:
+    from test_model import dec_flip_rand_nontop_stats_fname
+except:
+    from test_model import dec_flip_rand_nontopbyattn_stats_fname as dec_flip_rand_nontop_stats_fname
 from test_model import attn_div_from_unif_fname
+from test_model import gradsignmult_based_stats_fname
+from test_model import dec_flip_rand_nontopbygrad_stats_fname
+from test_model import dec_flip_rand_nontopbygradmult_stats_fname
+from test_model import dec_flip_rand_nontopbygradsignmult_stats_fname
 from statsmodels.sandbox.stats.runs import mcnemar
 import matplotlib.pyplot as plt
 import matplotlib
@@ -95,6 +102,33 @@ NONTOP_RAND_JS_DIV = 6
 # starting attn_div_from_unif file: id,seq_len,kl_div_from_unif,js_div_from_unif
 ATTN_KL_DIV_FROM_UNIF = 3
 ATTN_JS_DIV_FROM_UNIF = 4
+# starting gradsignmult_stats file
+ID_DUPLICATE_2 = 1
+ATTN_SEQ_LEN_DUPLICATE3_FOR_TESTING = 2
+NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT = 3
+NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADSIGNMULT = 4
+NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT = 5
+KL_DIV_ZERO_HIGHESTGRADSIGNMULT = 6
+JS_DIV_ZERO_HIGHESTGRADSIGNMULT = 7
+DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT = 8
+KL_DIV_ZERO_2NDHIGHESTGRADSIGNMULT = 9
+JS_DIV_ZERO_2NDHIGHESTGRADSIGNMULT = 10
+DEC_FLIP_ZERO_2NDHIGHESTGRADSIGNMULT = 11
+# starting nontop stats file: id,seq_len,not_negone_if_rand_caused_decflip,zeroed_weight,rand_kl_div,rand_js_div
+NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = 3
+NONTOPBYGRAD_RAND_ZEROED_WEIGHT = 4
+NONTOPBYGRAD_RAND_KL_DIV = 5
+NONTOPBYGRAD_RAND_JS_DIV = 6
+# starting nontop stats file: id,seq_len,not_negone_if_rand_caused_decflip,zeroed_weight,rand_kl_div,rand_js_div
+NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = 3
+NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT = 4
+NONTOPBYGRADMULT_RAND_KL_DIV = 5
+NONTOPBYGRADMULT_RAND_JS_DIV = 6
+# starting nontop stats file: id,seq_len,not_negone_if_rand_caused_decflip,zeroed_weight,rand_kl_div,rand_js_div
+NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = 3
+NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT = 4
+NONTOPBYGRADSIGNMULT_RAND_KL_DIV = 5
+NONTOPBYGRADSIGNMULT_RAND_JS_DIV = 6
 
 
 image_directory = None
@@ -103,7 +137,10 @@ data_dir = None
 
 
 def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_results_filename, unchanged_filename,
-                       grad_based_stats_filename, dec_flip_rand_nontop_stats_filename, attn_div_from_unif_filename):
+                       grad_based_stats_filename, dec_flip_rand_nontop_stats_filename, attn_div_from_unif_filename,
+                       gradsignmult_based_stats_filename, dec_flip_rand_nontopbygrad_stats_filename,
+                       dec_flip_rand_nontopbygradmult_stats_filename,
+                       dec_flip_rand_nontopbygradsignmult_stats_filename):
     print("Loading in raw CSV files")
     first_v_second = np.genfromtxt(first_v_second_filename, delimiter=',', skip_header=1)
     dec_flip_stats = np.genfromtxt(dec_flip_stats_filename, delimiter=',', skip_header=1)
@@ -112,6 +149,10 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
     grad_stats = np.genfromtxt(grad_based_stats_filename, delimiter=',', skip_header=1)
     nontop_stats = np.genfromtxt(dec_flip_rand_nontop_stats_filename, delimiter=',', skip_header=1)
     attn_div_stats = np.genfromtxt(attn_div_from_unif_filename, delimiter=',', skip_header=1)
+    gradsignmult_stats = np.genfromtxt(gradsignmult_based_stats_filename, delimiter=',', skip_header=1)
+    nontop_by_grad_stats = np.genfromtxt(dec_flip_rand_nontopbygrad_stats_filename, delimiter=',', skip_header=1)
+    nontop_by_gradmult_stats = np.genfromtxt(dec_flip_rand_nontopbygradmult_stats_filename, delimiter=',', skip_header=1)
+    nontop_by_gradsignmult_stats = np.genfromtxt(dec_flip_rand_nontopbygradsignmult_stats_filename, delimiter=',', skip_header=1)
 
     if len(first_v_second.shape) == 1:
         first_v_second = np.reshape(first_v_second, (1, first_v_second.shape[0]))
@@ -133,6 +174,18 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
                                                           str(unchanged.shape)
     assert first_v_second.shape[0] == grad_stats.shape[0], str(first_v_second.shape) + ', ' + \
                                                            str(grad_stats.shape)
+    assert first_v_second.shape[0] == nontop_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                           str(nontop_stats.shape)
+    assert first_v_second.shape[0] == attn_div_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                           str(attn_div_stats.shape)
+    assert first_v_second.shape[0] == gradsignmult_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                           str(gradsignmult_stats.shape)
+    assert first_v_second.shape[0] == nontop_by_grad_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                           str(nontop_by_grad_stats.shape)
+    assert first_v_second.shape[0] == nontop_by_gradmult_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                                     str(nontop_by_gradmult_stats.shape)
+    assert first_v_second.shape[0] == nontop_by_gradsignmult_stats.shape[0], str(first_v_second.shape) + ', ' + \
+                                                                     str(nontop_by_gradsignmult_stats.shape)
     diffs_bet_first_v_second_and_dec_flip_stats = first_v_second[:, 0] - dec_flip_stats[:, 0]
     diffs_bet_first_v_second_and_rand_stats = first_v_second[:, 0] - rand_stats[:, 0]
     diffs_bet_first_v_second_and_unchanged = first_v_second[:, 0] - unchanged[:, 0]
@@ -159,7 +212,16 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         DEC_FLIP_ZERO_2NDHIGHESTGRAD, KL_DIV_ZERO_HIGHESTGRADMULT, JS_DIV_ZERO_HIGHESTGRADMULT, \
         DEC_FLIP_ZERO_HIGHESTGRADMULT, KL_DIV_ZERO_2NDHIGHESTGRADMULT, JS_DIV_ZERO_2NDHIGHESTGRADMULT, \
         DEC_FLIP_ZERO_2NDHIGHESTGRADMULT, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOP_RAND_ZEROED_WEIGHT, \
-        NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, ATTN_KL_DIV_FROM_UNIF, ATTN_JS_DIV_FROM_UNIF
+        NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, ATTN_KL_DIV_FROM_UNIF, ATTN_JS_DIV_FROM_UNIF, \
+        ID_DUPLICATE_2, ATTN_SEQ_LEN_DUPLICATE3_FOR_TESTING, NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT, \
+        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADSIGNMULT, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT, \
+        KL_DIV_ZERO_HIGHESTGRADSIGNMULT, JS_DIV_ZERO_HIGHESTGRADSIGNMULT, DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT, \
+        KL_DIV_ZERO_2NDHIGHESTGRADSIGNMULT, JS_DIV_ZERO_2NDHIGHESTGRADSIGNMULT, DEC_FLIP_ZERO_2NDHIGHESTGRADSIGNMULT, \
+        NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOPBYGRAD_RAND_ZEROED_WEIGHT, NONTOPBYGRAD_RAND_KL_DIV, \
+        NONTOPBYGRAD_RAND_JS_DIV, NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, \
+        NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT, NONTOPBYGRADMULT_RAND_KL_DIV, NONTOPBYGRADMULT_RAND_JS_DIV, \
+        NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT, \
+        NONTOPBYGRADSIGNMULT_RAND_KL_DIV, NONTOPBYGRADSIGNMULT_RAND_JS_DIV
     if LAST_IND_OF_OUTPUT_CLASSES is None:
         num_rand_ind_orders_sampled = (rand_stats.shape[1] - 2) // 6
         assert num_rand_ind_orders_sampled == (rand_stats.shape[1] - 2) / 6, "Didn't divide evenly: rand_stats.shape[1] was " + str(rand_stats.shape[1])
@@ -217,6 +279,32 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
 
         ATTN_KL_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + NONTOP_RAND_JS_DIV
         ATTN_JS_DIV_FROM_UNIF = ATTN_KL_DIV_FROM_UNIF + 1
+
+        NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT = NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT + ATTN_JS_DIV_FROM_UNIF
+        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADSIGNMULT = NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT + 1
+        NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT = NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADSIGNMULT + 1
+        KL_DIV_ZERO_HIGHESTGRADSIGNMULT = NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT + 1
+        JS_DIV_ZERO_HIGHESTGRADSIGNMULT = KL_DIV_ZERO_HIGHESTGRADSIGNMULT + 1
+        DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT = JS_DIV_ZERO_HIGHESTGRADSIGNMULT + 1
+        KL_DIV_ZERO_2NDHIGHESTGRADSIGNMULT = DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT + 1
+        JS_DIV_ZERO_2NDHIGHESTGRADSIGNMULT = KL_DIV_ZERO_2NDHIGHESTGRADSIGNMULT + 1
+        DEC_FLIP_ZERO_2NDHIGHESTGRADSIGNMULT = JS_DIV_ZERO_2NDHIGHESTGRADSIGNMULT + 1
+
+        NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + DEC_FLIP_ZERO_2NDHIGHESTGRADSIGNMULT
+        NONTOPBYGRAD_RAND_ZEROED_WEIGHT = NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + 1
+        NONTOPBYGRAD_RAND_KL_DIV = NONTOPBYGRAD_RAND_ZEROED_WEIGHT + 1
+        NONTOPBYGRAD_RAND_JS_DIV = NONTOPBYGRAD_RAND_KL_DIV + 1
+
+        NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + NONTOPBYGRAD_RAND_JS_DIV
+        NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT = NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + 1
+        NONTOPBYGRADMULT_RAND_KL_DIV = NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT + 1
+        NONTOPBYGRADMULT_RAND_JS_DIV = NONTOPBYGRADMULT_RAND_KL_DIV + 1
+
+        NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE = NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + NONTOPBYGRADMULT_RAND_JS_DIV
+        NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT = NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE + 1
+        NONTOPBYGRADSIGNMULT_RAND_KL_DIV = NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT + 1
+        NONTOPBYGRADSIGNMULT_RAND_JS_DIV = NONTOPBYGRADSIGNMULT_RAND_KL_DIV + 1
+
         print("Found " + str(
             LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1) + " different output classes")
     elif LAST_IND_OF_OUTPUT_CLASSES - STARTING_IND_OF_OUTPUT_CLASSES + 1 > unchanged.shape[1] - 11:
@@ -234,16 +322,20 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
 
     print("Starting to concatenate data into one table")
     data_table = np.concatenate([first_v_second, dec_flip_stats, rand_stats, unchanged, grad_stats, nontop_stats,
-                                 attn_div_stats],
+                                 attn_div_stats, gradsignmult_stats, nontop_by_grad_stats, nontop_by_gradmult_stats,
+                                 nontop_by_gradsignmult_stats],
                                 axis=1)
     assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE_FOR_TESTING])[0]) == 0
-    assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0]) == 0, str(len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0])) + ' / ' + str(data_table.shape[0]) + " don't match. First ten: " + str(data_table[:10, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])
+    assert len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0]) == 0, \
+        str(len(np.nonzero(data_table[:, ATTN_SEQ_LEN] - data_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])[0])) + \
+        ' / ' + str(data_table.shape[0]) + " don't match. First ten: " + str(data_table[:10, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING])
     assert len(np.nonzero(data_table[:, ID] - data_table[:, ID_DUPLICATE])[0]) == 0
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP] > 1)
     assert not np.any(data_table[:, NEEDED_REM_BOTTOM_FRAC_X_FOR_DECFLIP] > 1)
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRAD] > 1)
     assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT] > 1)
-    assert data_table.shape[1] - 1 == ATTN_JS_DIV_FROM_UNIF
+    assert not np.any(data_table[:, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT] > 1)
+    assert data_table.shape[1] - 1 == NONTOPBYGRADSIGNMULT_RAND_JS_DIV
     print()
     return data_table
 
@@ -597,9 +689,9 @@ def test_needed_rem_lots_vs_not(table):
     print("For needed-to-remove-little, mean attn entropy was " + str(little_m) + " (std dev " + str(little_sd) + ")")
 
 
-def get_vsrand_2x2_decflip_jointdist(table, label, nonrand_column, is_han):
+def get_vsrand_2x2_decflip_jointdist(table, label, nonrand_column, corresponding_rand_column, is_han):
     table = table[table[:, ATTN_SEQ_LEN] > 1]  # get rid of seqs of length 1 for this
-    rand_flipped_decision = (table[:, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE] != -1)
+    rand_flipped_decision = (table[:, corresponding_rand_column] != -1)
     top_flipped_decision = (table[:, nonrand_column] != -1)
     print_2x2_decflip_jointdist(rand_flipped_decision, top_flipped_decision, label, table)
 
@@ -928,7 +1020,9 @@ def main(constrain_to_guessed_label=None):
         os.makedirs(dataset_output_directory)
     file_dir = base_output_dir + model_folder_name
     global first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname, data_dir, \
-        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname
+        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname, \
+        gradsignmult_based_stats_fname, dec_flip_rand_nontopbygrad_stats_fname, \
+        dec_flip_rand_nontopbygradmult_stats_fname, dec_flip_rand_nontopbygradsignmult_stats_fname
     data_dir = file_dir
     first_v_second_fname = file_dir + first_v_second_fname
     dec_flip_stats_fname = file_dir + dec_flip_stats_fname
@@ -937,8 +1031,15 @@ def main(constrain_to_guessed_label=None):
     grad_based_stats_fname = file_dir + grad_based_stats_fname
     dec_flip_rand_nontop_stats_fname = file_dir + dec_flip_rand_nontop_stats_fname
     attn_div_from_unif_fname = file_dir + attn_div_from_unif_fname
+    gradsignmult_based_stats_fname = file_dir + gradsignmult_based_stats_fname
+    dec_flip_rand_nontopbygrad_stats_fname = file_dir + dec_flip_rand_nontopbygrad_stats_fname
+    dec_flip_rand_nontopbygradmult_stats_fname = file_dir + dec_flip_rand_nontopbygradmult_stats_fname
+    dec_flip_rand_nontopbygradsignmult_stats_fname = file_dir + dec_flip_rand_nontopbygradsignmult_stats_fname
     table = load_in_data_table(first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname,
-                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname)
+                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname,
+                               gradsignmult_based_stats_fname, dec_flip_rand_nontopbygrad_stats_fname,
+                               dec_flip_rand_nontopbygradmult_stats_fname,
+                               dec_flip_rand_nontopbygradsignmult_stats_fname)
     if constrain_to_guessed_label is not None:
         table = table[table[:, ORIG_LABEL_GUESSED] == constrain_to_guessed_label]
         
@@ -972,6 +1073,10 @@ def main(constrain_to_guessed_label=None):
                                      table_of_seqs_longer_than_1_singleneg1[:, NEEDED_REM_TOP_X_FOR_DECFLIP_GRAD]))
     """
     print_per_instance_removal_efficiency_comparison(table, NEEDED_REM_TOP_X_FOR_DECFLIP,
+                                                     NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT, 'attn', 'gradsignmult',
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP,
+                                                     NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT)
+    print_per_instance_removal_efficiency_comparison(table, NEEDED_REM_TOP_X_FOR_DECFLIP,
                                                      NEEDED_REM_TOP_X_FOR_DECFLIP_GRADMULT, 'attn', 'gradmult',
                                                      NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP,
                                                      NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADMULT)
@@ -984,9 +1089,14 @@ def main(constrain_to_guessed_label=None):
     if write_attnperf:
         write_grad_labels_to_file(rows_where_grad_more_efficient, model_folder_name, args.top_level_data_dir)
 
-    get_vsrand_2x2_decflip_jointdist(table, "Top-attn vs. rand nontop weight", DEC_FLIP_ZERO_HIGHEST, is_han)
-    get_vsrand_2x2_decflip_jointdist(table, "Top-GRAD vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRAD, is_han)
-    get_vsrand_2x2_decflip_jointdist(table, "Top-GRADMULT vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRADMULT, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-attn vs. rand nontop weight", DEC_FLIP_ZERO_HIGHEST,
+                                     NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-GRAD vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRAD,
+                                     NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-GRADMULT vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRADMULT,
+                                     NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, is_han)
+    get_vsrand_2x2_decflip_jointdist(table, "Top-GRADSIGNMULT vs. rand nontop weight", DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT,
+                                     NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, is_han)
     print()
     get_vs2nd_2x2_decflip_jointdist(table)
     print()
@@ -1048,7 +1158,9 @@ def test_js_divs():
         os.makedirs(dataset_output_directory)
     file_dir = base_output_dir + model_folder_name
     global first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname, data_dir, \
-        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname
+        grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname, \
+        gradsignmult_based_stats_fname, dec_flip_rand_nontopbygrad_stats_fname, \
+        dec_flip_rand_nontopbygradmult_stats_fname, dec_flip_rand_nontopbygradsignmult_stats_fname
     data_dir = file_dir
     first_v_second_fname = file_dir + first_v_second_fname
     dec_flip_stats_fname = file_dir + dec_flip_stats_fname
@@ -1057,8 +1169,15 @@ def test_js_divs():
     grad_based_stats_fname = file_dir + grad_based_stats_fname
     dec_flip_rand_nontop_stats_fname = file_dir + dec_flip_rand_nontop_stats_fname
     attn_div_from_unif_fname = file_dir + attn_div_from_unif_fname
+    gradsignmult_based_stats_fname = file_dir + gradsignmult_based_stats_fname
+    dec_flip_rand_nontopbygrad_stats_fname = file_dir + dec_flip_rand_nontopbygrad_stats_fname
+    dec_flip_rand_nontopbygradmult_stats_fname = file_dir + dec_flip_rand_nontopbygradmult_stats_fname
+    dec_flip_rand_nontopbygradsignmult_stats_fname = file_dir + dec_flip_rand_nontopbygradsignmult_stats_fname
     table = load_in_data_table(first_v_second_fname, dec_flip_stats_fname, rand_results_fname, unchanged_fname,
-                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname)
+                               grad_based_stats_fname, dec_flip_rand_nontop_stats_fname, attn_div_from_unif_fname,
+                               gradsignmult_based_stats_fname, dec_flip_rand_nontopbygrad_stats_fname,
+                               dec_flip_rand_nontopbygradmult_stats_fname,
+                               dec_flip_rand_nontopbygradsignmult_stats_fname)
 
     # make sure that test results didn't get garbled-- do a couple of quick tests
     if table.shape[0] > 10:

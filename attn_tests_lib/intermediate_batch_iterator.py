@@ -2,6 +2,8 @@ import torch
 import numpy as np
 from glob import glob
 import pickle
+import os
+from allennlp.nn import util
 
 
 def get_corr_ind_and_attn_vals_out_of_line(line, return_log_attn_vals=False):
@@ -52,6 +54,63 @@ class AttentionIterator:
                 corr_ind, attn_vals = \
                     get_corr_ind_and_attn_vals_out_of_line(line, return_log_attn_vals=self.return_log_attn_vals)
                 yield attn_vals
+
+
+class GradientsIterator:
+    def __init__(self, batch_size, base_filename, gpu=-1):
+        self.gpu = gpu
+        self.batch_size = int(batch_size)
+        self.base_filename = base_filename
+        if not self.base_filename.endswith('_'):
+            self.base_filename += '_'
+
+    def __iter__(self):
+        all_filenames_in_numerical_order = sorted(list(glob(self.base_filename + '*-*')), reverse=False,
+                                                  key=(lambda x: int(x[x.rfind('_') + 1: x.rfind('-')])))
+        cur_pieces_to_concat = []
+        num_instances_in_waiting = 0
+        for filename in all_filenames_in_numerical_order:
+            with open(filename, 'rb') as f:
+                corr_grad_for_attn = pickle.load(f)
+                num_instances_in_this_block = corr_grad_for_attn.size(0)
+                sum_of_prev_plus_new = num_instances_in_waiting + num_instances_in_this_block
+                if sum_of_prev_plus_new >= self.batch_size:
+                    if sum_of_prev_plus_new == self.batch_size:
+                        if len(cur_pieces_to_concat) >= 1:
+                            piece_to_return = torch.cat(cur_pieces_to_concat + [corr_grad_for_attn], dim=0)
+                            if self.gpu != -1:
+                                piece_to_return = util.move_to_device(piece_to_return, self.gpu)
+                            cur_pieces_to_concat = []
+                            num_instances_in_waiting = 0
+                            yield piece_to_return
+                        else:  # cur_pieces_to_concat is empty
+                            if self.gpu != -1:
+                                corr_grad_for_attn = util.move_to_device(corr_grad_for_attn, self.gpu)
+                            yield corr_grad_for_attn
+                    else:
+                        # strictly greater than amount to return
+                        piece_of_cur_to_return = corr_grad_for_attn[0: self.batch_size - num_instances_in_waiting]
+                        piece_of_cur_to_hold_onto = corr_grad_for_attn[self.batch_size - num_instances_in_waiting:]
+                        piece_to_return = torch.cat(cur_pieces_to_concat + [piece_of_cur_to_return], dim=0)
+                        if self.gpu != -1:
+                            piece_to_return = util.move_to_device(piece_to_return, self.gpu)
+                        cur_pieces_to_concat = [piece_of_cur_to_hold_onto]
+                        num_instances_in_waiting = piece_of_cur_to_hold_onto.size(0)
+                        yield piece_to_return
+                else:
+                    cur_pieces_to_concat.append(corr_grad_for_attn)
+                    num_instances_in_waiting += num_instances_in_this_block
+        if len(cur_pieces_to_concat) > 0:
+            if len(cur_pieces_to_concat) == 1:
+                piece_to_return = cur_pieces_to_concat[0]
+            else:
+                piece_to_return = torch.cat(cur_pieces_to_concat, dim=0)
+            if self.gpu != -1:
+                piece_to_return = util.move_to_device(piece_to_return, self.gpu)
+            yield piece_to_return
+
+    def __call__(self, *args, **kwargs):
+        return self.__iter__()
 
 
 class IntermediateBatchIterator:

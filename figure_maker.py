@@ -11,8 +11,15 @@ from test_model import dec_flip_stats_fname
 from test_model import rand_results_fname  # this one also has variable-length fields now *shrug*
 from test_model import unchanged_fname  # index this one last because its fields are of variable length
 from test_model import grad_based_stats_fname
-from test_model import dec_flip_rand_nontop_stats_fname
+try:
+    from test_model import dec_flip_rand_nontop_stats_fname
+except:
+    from test_model import dec_flip_rand_nontopbyattn_stats_fname as dec_flip_rand_nontop_stats_fname
 from test_model import attn_div_from_unif_fname
+from test_model import gradsignmult_based_stats_fname
+from test_model import dec_flip_rand_nontopbygrad_stats_fname
+from test_model import dec_flip_rand_nontopbygradmult_stats_fname
+from test_model import dec_flip_rand_nontopbygradsignmult_stats_fname
 from process_test_outputs import load_in_data_table, get_np_arr_of_one_attn_weight_per_instance
 from math import ceil
 from random import random
@@ -28,7 +35,12 @@ def get_filenames_for_subdir(mid_dir):
     return base_output_dir + mid_dir + first_v_second_fname, base_output_dir + mid_dir + dec_flip_stats_fname, \
            base_output_dir + mid_dir + rand_results_fname, base_output_dir + mid_dir + unchanged_fname, \
            base_output_dir + mid_dir + grad_based_stats_fname, base_output_dir + mid_dir + dec_flip_rand_nontop_stats_fname, \
-           base_output_dir + mid_dir + attn_div_from_unif_fname
+           base_output_dir + mid_dir + attn_div_from_unif_fname, \
+           base_output_dir + mid_dir + gradsignmult_based_stats_fname, \
+           base_output_dir + mid_dir + dec_flip_rand_nontopbygrad_stats_fname, \
+           base_output_dir + mid_dir + dec_flip_rand_nontopbygradmult_stats_fname, \
+           base_output_dir + mid_dir + dec_flip_rand_nontopbygradsignmult_stats_fname
+
 
 yahoo_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('yahoo10cat-hanrnn-postattnfix'))
 imdb_hanrnn_table = load_in_data_table(*get_filenames_for_subdir('imdb-hanrnn-postattnfix'))
@@ -70,10 +82,17 @@ from process_test_outputs import EXTRACTED_SINGLE_ATTN_WEIGHT_END, EXTRACTED_SIN
         DEC_FLIP_ZERO_HIGHESTGRAD, KL_DIV_ZERO_2NDHIGHESTGRAD, JS_DIV_ZERO_2NDHIGHESTGRAD, \
         DEC_FLIP_ZERO_2NDHIGHESTGRAD, KL_DIV_ZERO_HIGHESTGRADMULT, JS_DIV_ZERO_HIGHESTGRADMULT, \
         DEC_FLIP_ZERO_HIGHESTGRADMULT, KL_DIV_ZERO_2NDHIGHESTGRADMULT, JS_DIV_ZERO_2NDHIGHESTGRADMULT, \
-        DEC_FLIP_ZERO_2NDHIGHESTGRADMULT, EXTRACTED_SINGLE_ATTN_WEIGHT_START, DEC_FLIP_ZERO_HIGHEST, \
-        JS_DIV_ZERO_HIGHEST, DEC_FLIP_ZERO_2NDHIGHEST, JS_DIV_ZERO_2NDHIGHEST, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, \
-        NONTOP_RAND_ZEROED_WEIGHT, NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP, \
-        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP, ATTN_SEQ_LEN, NEEDED_REM_TOP_X_FOR_DECFLIP, ID
+        DEC_FLIP_ZERO_2NDHIGHESTGRADMULT, NONTOP_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOP_RAND_ZEROED_WEIGHT, \
+        NONTOP_RAND_KL_DIV, NONTOP_RAND_JS_DIV, ATTN_KL_DIV_FROM_UNIF, ATTN_JS_DIV_FROM_UNIF, \
+        ID_DUPLICATE_2, ATTN_SEQ_LEN_DUPLICATE3_FOR_TESTING, NEEDED_REM_TOP_X_FOR_DECFLIP_GRADSIGNMULT, \
+        NEEDED_REM_TOP_PROBMASS_FOR_DECFLIP_GRADSIGNMULT, NEEDED_REM_TOP_FRAC_X_FOR_DECFLIP_GRADSIGNMULT, \
+        KL_DIV_ZERO_HIGHESTGRADSIGNMULT, JS_DIV_ZERO_HIGHESTGRADSIGNMULT, DEC_FLIP_ZERO_HIGHESTGRADSIGNMULT, \
+        KL_DIV_ZERO_2NDHIGHESTGRADSIGNMULT, JS_DIV_ZERO_2NDHIGHESTGRADSIGNMULT, DEC_FLIP_ZERO_2NDHIGHESTGRADSIGNMULT, \
+        NONTOPBYGRAD_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOPBYGRAD_RAND_ZEROED_WEIGHT, NONTOPBYGRAD_RAND_KL_DIV, \
+        NONTOPBYGRAD_RAND_JS_DIV, NONTOPBYGRADMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, \
+        NONTOPBYGRADMULT_RAND_ZEROED_WEIGHT, NONTOPBYGRADMULT_RAND_KL_DIV, NONTOPBYGRADMULT_RAND_JS_DIV, \
+        NONTOPBYGRADSIGNMULT_RAND_CAUSED_DECFLIP_IF_NOT_NEGONE, NONTOPBYGRADSIGNMULT_RAND_ZEROED_WEIGHT, \
+        NONTOPBYGRADSIGNMULT_RAND_KL_DIV, NONTOPBYGRADSIGNMULT_RAND_JS_DIV
 
 yahoo_han_mask = yahoo_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1
 imdb_han_mask = imdb_hanrnn_table[:, ATTN_SEQ_LEN_DUPLICATE2_FOR_TESTING] > 1

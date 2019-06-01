@@ -16,6 +16,7 @@ from scipy.misc import logsumexp
 from attn_tests_lib import load_attn_dists, load_log_unnormalized_attn_dists
 from attn_tests_lib import IntermediateBatchIterator
 from attn_tests_lib import AttentionIterator
+from attn_tests_lib import GradientsIterator
 from allennlp.common.util import import_submodules
 from random import shuffle
 import pickle
@@ -42,6 +43,10 @@ rand_results_fname = "rand_sample_stats.csv"
 grad_based_stats_fname = "grad_based_stats.csv"
 dec_flip_rand_nontop_stats_fname = "rand_nontop_decflipjs.csv"
 attn_div_from_unif_fname = "attn_div_from_uniform.csv"
+gradsignmult_based_stats_fname = "gradsignmult_based_stats.csv"
+dec_flip_rand_nontopbygrad_stats_fname = "rand_nontopbygrad_decflipjs.csv"
+dec_flip_rand_nontopbygradmult_stats_fname = "rand_nontopbygradmult_decflipjs.csv"
+dec_flip_rand_nontopbygradsignmult_stats_fname = "rand_nontopbygradsignmult_decflipjs.csv"
 num_rand_samples_to_take = 5
 
 
@@ -127,7 +132,8 @@ def get_gradients_wrt_attention(attention_weights, corr_vects, gradient_reportin
     # open gradtients file, process it
     with open(gradient_reporting_classifier._temp_filename, 'rb') as f:
         corr_grad_for_attn = pickle.load(f)
-        corr_grad_for_attn = util.move_to_device(corr_grad_for_attn, gpu)
+        if gpu != -1:
+            corr_grad_for_attn = util.move_to_device(corr_grad_for_attn, gpu)
         assert corr_grad_for_attn.size() == attention_weights.size()
 
     return corr_grad_for_attn
@@ -148,12 +154,13 @@ def exp_highest_val_over_sum_exp_all_vals(output_logits):
     return (max_vals / denoms).sum()
 
 
-def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             original_output_filename, grad_based_stats_filename, suppress_warnings=False):
+def get_gradient_and_gradmult_based_stats(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                          original_output_filename, grad_based_stats_filename,
+                                          grads_have_already_been_collected=False, function_of_grad='grad_and_gradmult',
+                                          suppress_warnings=False):
+    assert function_of_grad == 'grad_and_gradmult' or function_of_grad == 'gradsignmult'
     assert not os.path.isfile(grad_based_stats_filename)
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
-    grad_getting_classifier = set_up_gradient_reporting_classifier(vanilla_classifier=classifier)
-    grad_getting_classifier = grad_getting_classifier.cuda(device=gpu)
     next_available_ind = 1
     lists_to_write_to_file = []
     corr_output_yielder = iter(OriginalOutputDistIterator(original_output_filename))
@@ -165,97 +172,65 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
     if not os.path.isdir(base_filename):
         os.makedirs(base_filename)
     base_filename += 'gradient_wrt_attn_weights_'
+    if not grads_have_already_been_collected:
+        grad_getting_classifier = set_up_gradient_reporting_classifier(vanilla_classifier=classifier)
+        if gpu != -1:
+            grad_getting_classifier = grad_getting_classifier.cuda(device=gpu)
+    else:
+        grads_iterator = iter(GradientsIterator(batch_size, base_filename, gpu=gpu))
     total_num_dist_calcs = 0
     min_calculated_kl = 1000
     total_num_negative_kl_dist_calcs = 0
     min_calculated_js = 1000
     total_num_negative_js_dist_calcs = 0
     for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
-                          desc="Calculating grad-based decision flip stats"):
+                          desc="Calculating " + function_of_grad + "-based decision flip stats"):
         list_of_lens = batch_tup[2]
         original_attn_weights = util.move_to_device(batch_tup[0], gpu)
-        original_attn_weights_for_backpropagating = deepcopy(original_attn_weights)
-        original_attn_weights_for_backpropagating = util.move_to_device(original_attn_weights_for_backpropagating,
-                                                                        gpu)
-        corr_vects = util.move_to_device(batch_tup[1], gpu)
-        corr_vects_for_later = deepcopy(corr_vects)
-        corr_vects_for_later = util.move_to_device(corr_vects_for_later, gpu)
+        if not grads_have_already_been_collected:
+            original_attn_weights_for_backpropagating = deepcopy(original_attn_weights)
+            original_attn_weights_for_backpropagating = util.move_to_device(original_attn_weights_for_backpropagating,
+                                                                            gpu)
+            corr_vects = util.move_to_device(batch_tup[1], gpu)
+            corr_vects_for_later = deepcopy(corr_vects)
+            corr_vects_for_later = util.move_to_device(corr_vects_for_later, gpu)
 
-        function_of_presoftmax_output = exp_highest_val_over_sum_exp_all_vals
+            function_of_presoftmax_output = exp_highest_val_over_sum_exp_all_vals
 
-        corr_grads_tensor = get_gradients_wrt_attention(original_attn_weights_for_backpropagating, corr_vects,
-                                                        grad_getting_classifier, function_of_presoftmax_output,
-                                                        base_filename, next_available_ind, gpu)
+            corr_grads_tensor = get_gradients_wrt_attention(original_attn_weights_for_backpropagating, corr_vects,
+                                                            grad_getting_classifier, function_of_presoftmax_output,
+                                                            base_filename, next_available_ind, gpu)
+        else:
+            corr_grads_tensor = next(grads_iterator)
+            assert corr_grads_tensor.size(0) == original_attn_weights.size(0)
+            if corr_grads_tensor.size(1) != original_attn_weights.size(1):
+                # this could happen if we had to assemble corr_grads from different arrays due to diff batch size
+                # when computing gradients
+                if corr_grads_tensor.size(1) < original_attn_weights.size(1):
+                    corr_grads_tensor = corr_grads_tensor[:, :original_attn_weights.size(1)]
+                else:
+                    corr_grads_tensor = torch.cat([corr_grads_tensor,
+                                                   corr_grads_tensor.new_zeros((corr_grads_tensor.size(0),
+                                                        original_attn_weights.size(1) - corr_grads_tensor.size(1)))],
+                                                  dim=1)
+            corr_vects_for_later = util.move_to_device(batch_tup[1], gpu)
 
-        attn_times_grads = corr_grads_tensor * original_attn_weights
-
-        list_of_original_log_np_arrays = []
-        for i in range(len(list_of_lens)):
-            list_of_original_log_np_arrays.append(next(corr_output_yielder))
-        list_of_original_log_np_arrays = np.array(list_of_original_log_np_arrays)
-        original_dists = np.array(list_of_original_log_np_arrays)
-        _, list_of_batch_results_plaingrad, neg_calculation_artifacts_info_tup_plaingrad = \
-            get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
-                                               batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
-                                               zero_out_by=corr_grads_tensor.cpu().numpy(),
-                                               suppress_warnings=suppress_warnings)
-        _, list_of_batch_results_gradmult, neg_calculation_artifacts_info_tup_gradmult = \
-            get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
-                                               batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
-                                               zero_out_by=attn_times_grads.cpu().numpy(),
-                                               suppress_warnings=suppress_warnings)
-
-        inds_in_dec_order, _ = get_inds_of_sorted_attnshaped_vals(corr_grads_tensor, list_of_lens)
-        inds_in_dec_order_by_mult, _ = get_inds_of_sorted_attnshaped_vals(attn_times_grads, list_of_lens)
-
-        # remove highest-gradient element first
-
-        original_labels = torch.from_numpy(np.argmax(original_dists, axis=1))
-        original_labels = util.move_to_device(original_labels, gpu)
-
-        corr_instance_inds = torch.from_numpy(np.arange(start=next_available_ind,
-                                                        stop=(next_available_ind + len(list_of_lens))))
-        corr_instance_inds = util.move_to_device(corr_instance_inds, gpu)
-
-        lists_to_write_from_top = get_dec_flip_info_for_batch(inds_in_dec_order, corr_instance_inds, original_labels,
-                                                              corr_vects_for_later, original_attn_weights, classifier,
-                                                              print_10_output_for_debugging=False)
-        lists_to_write_from_top_mult = get_dec_flip_info_for_batch(inds_in_dec_order_by_mult, corr_instance_inds,
-                                                                   original_labels, corr_vects_for_later,
-                                                                   original_attn_weights, classifier)
-
-        next_available_ind += len(list_of_lens)
-        for i in range(len(list_of_lens)):
-            top_list = lists_to_write_from_top[i]
-            top_mult_list = lists_to_write_from_top_mult[i]
-            top_singlestats_plaingrad = list_of_batch_results_plaingrad[i]
-            top_singlestats_gradmult = list_of_batch_results_gradmult[i]
-            assert top_list[0] == top_mult_list[0]
-            assert top_list[0] == int(top_singlestats_plaingrad[0]), \
-                str(top_list[0]) + ', ' + str(top_singlestats_plaingrad[0])
-            assert top_list[0] == int(top_singlestats_gradmult[0]), \
-                str(top_list[0]) + ', ' + str(top_singlestats_gradmult[0])
-            instance_list = [top_list[0],
-                             str(list_of_lens[i]),
-                             str(top_list[2]),
-                             str(top_list[3]),
-                             str(top_list[4]),
-                             str(top_mult_list[2]),
-                             str(top_mult_list[3]),
-                             str(top_mult_list[4]),
-                             str(top_singlestats_plaingrad[1]),  # kl div highest
-                             str(top_singlestats_plaingrad[2]),  # js div highest
-                             str(top_singlestats_plaingrad[3]),  # decision flip highest
-                             str(top_singlestats_plaingrad[4]),  # kl div 2nd highest
-                             str(top_singlestats_plaingrad[5]),  # js div 2nd highest
-                             str(top_singlestats_plaingrad[6]),  # decision flip 2nd highest
-                             str(top_singlestats_gradmult[1]),
-                             str(top_singlestats_gradmult[2]),
-                             str(top_singlestats_gradmult[3]),
-                             str(top_singlestats_gradmult[4]),
-                             str(top_singlestats_gradmult[5]),
-                             str(top_singlestats_gradmult[6])]
-            lists_to_write_to_file.append(instance_list)
+        if function_of_grad == 'grad_and_gradmult':
+            next_available_ind, neg_calculation_artifacts_info_tup_plaingrad, \
+            neg_calculation_artifacts_info_tup_gradmult, lists_to_write_to_file_additions = \
+                handle_loop_body_for_grad_and_gradmult_stats(corr_grads_tensor, original_attn_weights, list_of_lens,
+                                                             corr_output_yielder, next_available_ind, gpu, classifier,
+                                                             batch_tup, corr_vects_for_later,
+                                                             suppress_warnings=suppress_warnings)
+        else:
+            # not *really* calculation artifacts for plaingrad, but we name it that for compatibility
+            next_available_ind, neg_calculation_artifacts_info_tup_plaingrad, lists_to_write_to_file_additions = \
+                handle_loop_body_for_gradsignmult_stats(corr_grads_tensor, original_attn_weights, list_of_lens,
+                                                        corr_output_yielder, next_available_ind, gpu, classifier,
+                                                        batch_tup, corr_vects_for_later,
+                                                        suppress_warnings=suppress_warnings)
+            neg_calculation_artifacts_info_tup_gradmult = []
+        lists_to_write_to_file += lists_to_write_to_file_additions
 
         total_num_dist_calcs += (len(list_of_lens) * len(neg_calculation_artifacts_info_tup_plaingrad))
         for i in range(len(neg_calculation_artifacts_info_tup_plaingrad)):
@@ -286,6 +261,83 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
               'lowest calculated JS div was ' + str(min_calculated_js) +
               ' (should be close to 0. see test_divergences() in debugging.py for sanity checks)')
 
+    if function_of_grad == 'grad_and_gradmult':
+        write_grad_and_gradmult_stats_file(grad_based_stats_filename, lists_to_write_to_file)
+    else:
+        write_gradsignmult_stats_file(grad_based_stats_filename, lists_to_write_to_file)
+
+
+def write_gradsignmult_stats_file(grad_based_stats_filename, lists_to_write_to_file):
+    with open(grad_based_stats_filename, 'w') as f:
+        f.write('id,seq_len,needed_to_rem_x_topsignmult_items_for_decflip,' +
+                'needed_to_rem_x_topsignmult_probmass_for_decflip,' +
+                'needed_to_rem_frac_x_topsignmult_items_for_decflip,' +
+                'gradsignmult_klhighest,gradsignmult_jshighest,gradsignmult_decfliphighest,gradsignmult_kl2ndhighest,' +
+                'gradsignmult_js2ndhighest,gradsignmult_decflip2ndhighest\n')
+        prev_id = -1
+        for instance_list in tqdm(lists_to_write_to_file, desc="Writing dec flip stats file"):
+            assert prev_id < instance_list[0]
+            prev_id = instance_list[0]
+            f.write(str(instance_list[0]) + ',' + instance_list[1] + ',' + instance_list[2] + ',' + instance_list[3] +
+                    ',' + instance_list[4] + ',' + instance_list[5] + ',' + instance_list[6] + ',' +
+                    instance_list[7] + ',' + instance_list[8] + ',' + instance_list[9] + ',' + instance_list[10] + '\n')
+    print("Done writing gradsignmult-based decision-flip stats file.")
+
+
+def handle_loop_body_for_gradsignmult_stats(corr_grads_tensor, original_attn_weights, list_of_lens,
+                                            corr_output_yielder, next_available_ind, gpu, classifier,
+                                            batch_tup, corr_vects_for_later, suppress_warnings=False):
+    lists_to_write_to_file_additions = []
+    list_of_original_log_np_arrays = []
+    for i in range(len(list_of_lens)):
+        list_of_original_log_np_arrays.append(next(corr_output_yielder))
+    list_of_original_log_np_arrays = np.array(list_of_original_log_np_arrays)
+    original_dists = np.array(list_of_original_log_np_arrays)
+
+    multipliers = original_attn_weights.new_ones(original_attn_weights.size())[corr_grads_tensor < 0] = -1
+    zero_out_by = original_attn_weights * multipliers
+
+    _, list_of_batch_results_gradsignmult, neg_calculation_artifacts_info_tup_gradsignmult = \
+        get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
+                                           batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
+                                           zero_out_by=zero_out_by.cpu().numpy(),
+                                           suppress_warnings=suppress_warnings)
+
+    inds_in_dec_order, _ = get_inds_of_sorted_attnshaped_vals(zero_out_by, list_of_lens)
+    # remove highest-gradsignmult-value element first
+
+    original_labels = torch.from_numpy(np.argmax(original_dists, axis=1))
+    original_labels = util.move_to_device(original_labels, gpu)
+
+    corr_instance_inds = torch.from_numpy(np.arange(start=next_available_ind,
+                                                    stop=(next_available_ind + len(list_of_lens))))
+    corr_instance_inds = util.move_to_device(corr_instance_inds, gpu)
+
+    lists_to_write_from_top_gradsignmult = get_dec_flip_info_for_batch(inds_in_dec_order, corr_instance_inds,
+                                                                       original_labels, corr_vects_for_later,
+                                                                       original_attn_weights, classifier)
+    next_available_ind += len(list_of_lens)
+    for i in range(len(list_of_lens)):
+        top_gradsignmult_list = lists_to_write_from_top_gradsignmult[i]
+        top_singlestats_gradsignmult = list_of_batch_results_gradsignmult[i]
+        assert top_gradsignmult_list[0] == int(top_singlestats_gradsignmult[0]), \
+            str(top_gradsignmult_list[0]) + ', ' + str(int(top_singlestats_gradsignmult[0]))
+        instance_list = [top_gradsignmult_list[0],
+                         str(list_of_lens[i]),
+                         str(top_gradsignmult_list[2]),
+                         str(top_gradsignmult_list[3]),
+                         str(top_gradsignmult_list[4]),
+                         str(top_singlestats_gradsignmult[1]),  # kl div highest
+                         str(top_singlestats_gradsignmult[2]),  # js div highest
+                         str(top_singlestats_gradsignmult[3]),  # decision flip highest
+                         str(top_singlestats_gradsignmult[4]),  # kl div 2nd highest
+                         str(top_singlestats_gradsignmult[5]),  # js div 2nd highest
+                         str(top_singlestats_gradsignmult[6])]  # decision flip 2nd highest
+        lists_to_write_to_file_additions.append(instance_list)
+    return next_available_ind, neg_calculation_artifacts_info_tup_gradsignmult, lists_to_write_to_file_additions
+
+
+def write_grad_and_gradmult_stats_file(grad_based_stats_filename, lists_to_write_to_file):
     with open(grad_based_stats_filename, 'w') as f:
         f.write('id,seq_len,needed_to_rem_x_top_items_for_decflip,needed_to_rem_x_top_probmass_for_decflip,' +
                 'needed_to_rem_frac_x_top_items_for_decflip,needed_to_rem_x_top_multitems_for_decflip,' +
@@ -303,7 +355,85 @@ def get_gradient_based_stats(classifier, attn_weight_filename, corr_vector_dir, 
                     ',' + instance_list[11] + ',' + instance_list[12] + ',' + instance_list[13] +
                     ',' + instance_list[14] + ',' + instance_list[15] + ',' + instance_list[16] +
                     ',' + instance_list[17] + ',' + instance_list[18] + ',' + instance_list[19] + '\n')
-    print("Done writing gradient-based decision-flip stats file.")
+    print("Done writing gradient-based and gradmult-based decision-flip stats file.")
+
+
+def handle_loop_body_for_grad_and_gradmult_stats(corr_grads_tensor, original_attn_weights, list_of_lens,
+                                                 corr_output_yielder, next_available_ind, gpu, classifier,
+                                                 batch_tup, corr_vects_for_later, suppress_warnings=False):
+    lists_to_write_to_file_additions = []
+    attn_times_grads = corr_grads_tensor * original_attn_weights
+
+    list_of_original_log_np_arrays = []
+    for i in range(len(list_of_lens)):
+        list_of_original_log_np_arrays.append(next(corr_output_yielder))
+    list_of_original_log_np_arrays = np.array(list_of_original_log_np_arrays)
+    original_dists = np.array(list_of_original_log_np_arrays)
+    _, list_of_batch_results_plaingrad, neg_calculation_artifacts_info_tup_plaingrad = \
+        get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
+                                           batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
+                                           zero_out_by=corr_grads_tensor.cpu().numpy(),
+                                           suppress_warnings=suppress_warnings)
+    _, list_of_batch_results_gradmult, neg_calculation_artifacts_info_tup_gradmult = \
+        get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_weights, classifier,
+                                           batch_tup[1], batch_tup[2], list_of_original_log_np_arrays,
+                                           zero_out_by=attn_times_grads.cpu().numpy(),
+                                           suppress_warnings=suppress_warnings)
+
+    inds_in_dec_order, _ = get_inds_of_sorted_attnshaped_vals(corr_grads_tensor, list_of_lens)
+    inds_in_dec_order_by_mult, _ = get_inds_of_sorted_attnshaped_vals(attn_times_grads, list_of_lens)
+
+    # remove highest-gradient element first
+
+    original_labels = torch.from_numpy(np.argmax(original_dists, axis=1))
+    original_labels = util.move_to_device(original_labels, gpu)
+
+    corr_instance_inds = torch.from_numpy(np.arange(start=next_available_ind,
+                                                    stop=(next_available_ind + len(list_of_lens))))
+    corr_instance_inds = util.move_to_device(corr_instance_inds, gpu)
+
+    lists_to_write_from_top = get_dec_flip_info_for_batch(inds_in_dec_order, corr_instance_inds, original_labels,
+                                                          corr_vects_for_later, original_attn_weights, classifier,
+                                                          print_10_output_for_debugging=False)
+    lists_to_write_from_top_mult = get_dec_flip_info_for_batch(inds_in_dec_order_by_mult, corr_instance_inds,
+                                                               original_labels, corr_vects_for_later,
+                                                               original_attn_weights, classifier)
+
+    next_available_ind += len(list_of_lens)
+    for i in range(len(list_of_lens)):
+        top_list = lists_to_write_from_top[i]
+        top_mult_list = lists_to_write_from_top_mult[i]
+        top_singlestats_plaingrad = list_of_batch_results_plaingrad[i]
+        top_singlestats_gradmult = list_of_batch_results_gradmult[i]
+        assert top_list[0] == top_mult_list[0]
+        assert top_list[0] == int(top_singlestats_plaingrad[0]), \
+            str(top_list[0]) + ', ' + str(top_singlestats_plaingrad[0])
+        assert top_list[0] == int(top_singlestats_gradmult[0]), \
+            str(top_list[0]) + ', ' + str(top_singlestats_gradmult[0])
+        instance_list = [top_list[0],
+                         str(list_of_lens[i]),
+                         str(top_list[2]),
+                         str(top_list[3]),
+                         str(top_list[4]),
+                         str(top_mult_list[2]),
+                         str(top_mult_list[3]),
+                         str(top_mult_list[4]),
+                         str(top_singlestats_plaingrad[1]),  # kl div highest
+                         str(top_singlestats_plaingrad[2]),  # js div highest
+                         str(top_singlestats_plaingrad[3]),  # decision flip highest
+                         str(top_singlestats_plaingrad[4]),  # kl div 2nd highest
+                         str(top_singlestats_plaingrad[5]),  # js div 2nd highest
+                         str(top_singlestats_plaingrad[6]),  # decision flip 2nd highest
+                         str(top_singlestats_gradmult[1]),
+                         str(top_singlestats_gradmult[2]),
+                         str(top_singlestats_gradmult[3]),
+                         str(top_singlestats_gradmult[4]),
+                         str(top_singlestats_gradmult[5]),
+                         str(top_singlestats_gradmult[6])]
+        lists_to_write_to_file_additions.append(instance_list)
+
+    return next_available_ind, neg_calculation_artifacts_info_tup_plaingrad, \
+           neg_calculation_artifacts_info_tup_gradmult, lists_to_write_to_file_additions
 
 
 def get_batch_size_max_samples_per_batch_from_config_file(config_filename):
@@ -484,7 +614,7 @@ def get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filena
     print("Done writing attn_div_from_unif stats.")
 
 
-def get_two_highest_and_inds(list_to_check):
+def get_two_highest_and_inds(list_to_check, dont_check_at_ind_x_or_greater=None):
     highest_val = -1
     highest_ind = -1
     second_highest_val = -1
@@ -497,7 +627,9 @@ def get_two_highest_and_inds(list_to_check):
         list_len = len(list_to_check)
     else:
         list_len = list_to_check.shape[0]
-    for i in range(list_len):
+    if dont_check_at_ind_x_or_greater is None:
+        dont_check_at_ind_x_or_greater = list_len
+    for i in range(dont_check_at_ind_x_or_greater):
         val = list_to_check[i]
         if val > highest_val:
             second_highest_val = highest_val
@@ -519,7 +651,7 @@ def get_two_highest_and_inds(list_to_check):
            lowest_val, lowest_ind, second_lowest_val, second_lowest_ind
 
 
-def make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(two_dim_arr, other_arr_to_sort_by=None):
+def make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(two_dim_arr, true_lengths, other_arr_to_sort_by=None):
     highest_zeroed_out = two_dim_arr.clone()
     second_highest_zeroed_out = two_dim_arr.clone()
     lowest_zeroed_out = two_dim_arr.clone()
@@ -527,10 +659,10 @@ def make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(two_dim_arr, 
     for i in range(two_dim_arr.shape[0]):
         if other_arr_to_sort_by is None:
             _, highest_ind, _, second_highest_ind, _, lowest_ind, _, second_lowest_ind = \
-                get_two_highest_and_inds(two_dim_arr[i])
+                get_two_highest_and_inds(two_dim_arr[i], dont_check_at_ind_x_or_greater=true_lengths[i])
         else:
             _, highest_ind, _, second_highest_ind, _, lowest_ind, _, second_lowest_ind = \
-                get_two_highest_and_inds(other_arr_to_sort_by[i])
+                get_two_highest_and_inds(other_arr_to_sort_by[i], dont_check_at_ind_x_or_greater=true_lengths[i])
         highest_zeroed_out[i, highest_ind] = 0
         second_highest_zeroed_out[i, second_highest_ind] = 0
         lowest_zeroed_out[i, lowest_ind] = 0
@@ -615,8 +747,15 @@ def binary_search_for_first_ind_with_num_geq(arr, x):
 def get_inds_of_sorted_attnshaped_vals(original_vals, list_of_lens):
     sorted_attn_inds_increasing_order = []
     sorted_attn_inds_decreasing_order = []
-    if (original_vals < 0).sum() > 0:
-        original_vals[original_vals == 0] = -1000000  # disadvantage padding in favor of negative gradient vals
+    device = str(original_vals.device)
+    is_cuda = 'cpu' not in device
+    if is_cuda:
+        gpu = int(device[device.rfind(':') + 1:])
+    add_to_tensor = (1000000 * util.get_mask_from_sequence_lengths(torch.LongTensor(list_of_lens),
+                                                                   original_vals.size(1)).float()) - 1000000
+    if is_cuda:
+        add_to_tensor = util.move_to_device(add_to_tensor, gpu)
+    original_vals = original_vals + add_to_tensor  # disadvantage padding in favor of negative gradient vals
     sorted_attn_weights_dec, sorted_corr_inds_dec = original_vals.sort(1, descending=True)
     sorted_corr_inds_dec = sorted_corr_inds_dec.cpu().numpy()
     for i in range(original_vals.size(0)):
@@ -812,7 +951,8 @@ def get_dec_flip_stats_and_rand(classifier, attn_weight_filename, corr_vector_di
     
 
 def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                original_output_filename, dec_flip_rand_nontop_stats_filename, suppress_warnings=False):
+                                       original_output_filename, dec_flip_rand_nontop_stats_filename,
+                                       order_type='attn', suppress_warnings=False):
     batch_iterator = IntermediateBatchIterator(attn_weight_filename, corr_vector_dir, batch_size)
     next_available_ind = 1
     lists_to_write_to_file = []
@@ -821,6 +961,12 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
     num_neg_jsdivs = 0
     num_pos_kldivs = 0
     num_pos_jsdivs = 0
+    if order_type != 'attn':
+        assert order_type == 'grad' or order_type == 'gradmult' or order_type == 'gradsignmult'
+        # set up a gradients iterator
+        base_filename = corr_vector_dir + 'gradients/'
+        base_filename += 'gradient_wrt_attn_weights_'
+        grad_iterator = iter(GradientsIterator(batch_size, base_filename, gpu=gpu))
     for batch_tup in tqdm(batch_iterator, total=int(ceil(batch_iterator.num_instances / batch_iterator.batch_size)),
                           desc="Calculating rand nontop decision flip stats"):
         list_of_lens = batch_tup[2]
@@ -838,7 +984,37 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
                                                         stop=(next_available_ind + len(list_of_lens))))
         corr_instance_inds = util.move_to_device(corr_instance_inds, gpu)
 
-        inds_in_dec_order, inds_in_inc_order = get_inds_of_sorted_attnshaped_vals(original_attn_weights, list_of_lens)
+        if order_type == 'attn':
+            ranking = original_attn_weights
+        else:
+            # get next gradient values
+            corr_grads = next(grad_iterator)
+            assert corr_grads.size(0) == original_attn_weights.size(0)
+            if corr_grads.size(1) != original_attn_weights.size(1):
+                # this could happen if we had to assemble corr_grads from different arrays due to diff batch size
+                # when computing gradients
+                if corr_grads.size(1) < original_attn_weights.size(1):
+                    corr_grads = corr_grads[:, :original_attn_weights.size(1)]
+                else:
+                    corr_grads = torch.cat([corr_grads,
+                                            corr_grads.new_zeros((corr_grads.size(0),
+                                                                  original_attn_weights.size(1) - corr_grads.size(1)))],
+                                           dim=1)
+            add_to_tensor = (1000000 * util.get_mask_from_sequence_lengths(torch.LongTensor(list_of_lens),
+                                                                           corr_grads.size(1)).float()) - 1000000
+            if gpu != -1:
+                add_to_tensor = util.move_to_device(add_to_tensor, gpu)
+            add_to_tensor = util.move_to_device(add_to_tensor, gpu)
+            if order_type == 'grad':
+                ranking = corr_grads
+            elif order_type == 'gradmult':
+                ranking = corr_grads * original_attn_weights
+            elif order_type == 'gradsignmult':
+                multipliers = original_attn_weights.new_ones(original_attn_weights.size())[corr_grads < 0] = -1
+                ranking = original_attn_weights * multipliers
+            ranking = ranking + add_to_tensor  # disadvantage padding in favor of negative gradient vals
+
+        inds_in_dec_order, inds_in_inc_order = get_inds_of_sorted_attnshaped_vals(ranking, list_of_lens)
 
         rand_nontop_ind_lists = []
         zeroed_weights = []
@@ -852,11 +1028,11 @@ def get_dec_flip_stats_for_rand_nontop(classifier, attn_weight_filename, corr_ve
                 ind_pulled = random.randint(1, len(ind_list) - 1)
             rand_nontop_ind_lists.append([ind_pulled])
             zeroed_weights.append(float(original_attn_weights[i, ind_pulled]))
-        lists_to_write, val_kldivs = get_dec_flip_info_for_batch(rand_nontop_ind_lists, corr_instance_inds, original_labels,
-                                                              corr_vects, original_attn_weights, classifier,
-                                                              print_10_output_for_debugging=False,
-                                                     get_attnvals_kljsdivs_for_first_inds=original_dists,
-                                                                 suppress_warnings=suppress_warnings)
+        lists_to_write, val_kldivs = \
+            get_dec_flip_info_for_batch(rand_nontop_ind_lists, corr_instance_inds, original_labels, corr_vects,
+                                        original_attn_weights, classifier, print_10_output_for_debugging=False,
+                                        get_attnvals_kljsdivs_for_first_inds=original_dists,
+                                        suppress_warnings=suppress_warnings)
         next_available_ind += len(list_of_lens)
         for i in range(len(list_of_lens)):
             weight_kl_js = val_kldivs[i]
@@ -1003,7 +1179,7 @@ def get_first_v_second_stats_for_batch(next_available_ind, gpu, original_attn_we
                                        corresponding_vects, list_of_lens, list_of_original_log_np_arrays,
                                        zero_out_by=None, suppress_warnings=False):
     attn_zero_highest, attn_zero_2ndhighest, attn_zero_lowest, attn_zero_2ndlowest = \
-        make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(original_attn_weights,
+        make_zeroed_out_copies_for_highest_2ndhighest_lowest_2ndlowest(original_attn_weights, list_of_lens,
                                                                        other_arr_to_sort_by=zero_out_by)
     attn_zero_highest, attn_zero_2ndhighest, attn_zero_lowest, attn_zero_2ndlowest = \
         Variable(attn_zero_highest), Variable(attn_zero_2ndhighest), Variable(attn_zero_lowest), \
@@ -1118,7 +1294,8 @@ def get_first_v_second_stats(classifier, attn_weight_filename, corr_vector_dir, 
 
 
 def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file, suppress_warnings=False):
+                                         unchanged_results_filename, test_data_file, suppress_warnings=False,
+                                         is_han=True):
     test_generator = test_iterator(test_data._read(test_data_file),
                                    num_epochs=1,
                                    shuffle=False)
@@ -1129,8 +1306,25 @@ def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, a
     next_available_instance_ind = 1  # indexing starts at 1
     stop_at_10 = False
     instance_inds_passed = 0
+    list_of_lengths = []
     for batch in test_generator_tqdm:
         batch = util.move_to_device(batch, gpu)
+
+        tokens_ = batch['tokens']['tokens']
+        if is_han:
+            batch_size = tokens_.size(0)
+            max_num_sents = tokens_.size(1)
+            first_token_ind_in_each_sentence = tokens_[:, :, 0].view(batch_size * max_num_sents)
+            sentence_level_mask = tokens_.new_zeros(batch_size * max_num_sents).float()
+            inds_of_nonzero_rows = torch.nonzero(first_token_ind_in_each_sentence)
+            inds_of_nonzero_rows = inds_of_nonzero_rows.view(inds_of_nonzero_rows.shape[0])
+            sentence_level_mask[inds_of_nonzero_rows] = 1
+            sentence_level_mask = sentence_level_mask.view(batch_size, max_num_sents)
+            final_layer_mask = sentence_level_mask
+        else:
+            final_layer_mask = util.get_text_field_mask({"tokens": tokens_}).float()
+        one_d_arr_of_lengths = torch.sum(final_layer_mask, dim=1).cpu().data.numpy().astype(int)
+        list_of_lengths += list(one_d_arr_of_lengths)
 
         output_dict = model(tokens=batch['tokens'])
         output_log_dists = output_dict["label_logits"].data.cpu().numpy()
@@ -1167,7 +1361,7 @@ def do_unchanged_run_and_collect_results(model, test_iterator, test_data, gpu, a
         attn_entropy = get_entropy_of_dists(np.array([log_attn_vals]), [len(log_attn_vals)],
                                             suppress_warnings=suppress_warnings)[0]
         _, ind_of_highest, _, ind_of_second_highest, _, ind_of_lowest, _, ind_of_second_lowest = \
-            get_two_highest_and_inds(log_attn_vals)
+            get_two_highest_and_inds(log_attn_vals, dont_check_at_ind_x_or_greater=list_of_lengths[i])
         ratio_of_2nd_to_1st = np.exp(log_attn_vals[ind_of_second_highest] - log_attn_vals[ind_of_highest])
         ratio_of_2nd_to_1st_low = np.exp(log_attn_vals[ind_of_second_lowest] - log_attn_vals[ind_of_lowest])
         entropy_of_1st_2nd_dist = get_entropy_of_dists(np.array([[log_attn_vals[ind_of_highest],
@@ -1241,27 +1435,47 @@ def run_tests(s_dir, output_dir, test_data_file, attn_layer_to_replace, attn_wei
     dec_flip_stats_filename = output_dir + dec_flip_stats_fname
     rand_results_filename = output_dir + rand_results_fname
     grad_based_stats_filename = output_dir + grad_based_stats_fname
-    dec_flip_rand_nontop_stats_filename = output_dir + dec_flip_rand_nontop_stats_fname
+    dec_flip_rand_nontopbyattn_stats_filename = output_dir + dec_flip_rand_nontop_stats_fname
     attn_div_from_unif_filename = output_dir + attn_div_from_unif_fname
+    gradsignmult_based_stats_filename = output_dir + gradsignmult_based_stats_fname
+    dec_flip_rand_nontopbygrad_stats_filename = output_dir + dec_flip_rand_nontopbygrad_stats_fname
+    dec_flip_rand_nontopbygradmult_stats_filename = output_dir + dec_flip_rand_nontopbygradmult_stats_fname
+    dec_flip_rand_nontopbygradsignmult_stats_filename = output_dir + dec_flip_rand_nontopbygradsignmult_stats_fname
     model, just_the_classifier = \
         load_testing_models_in_eval_mode_from_serialization_dir(s_dir, attn_weight_filename, corr_vector_dir,
                                                                 total_num_test_instances, training_config_filename,
                                                                 name_of_attn_layer_to_replace=attn_layer_to_replace,
                                                                 cuda_device=gpu)
-    do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
-                                         unchanged_results_filename, test_data_file,
+    """do_unchanged_run_and_collect_results(model, dataset_iterator, dataset_reader, gpu, attn_weight_filename,
+                                         unchanged_results_filename, test_data_file, is_han=loading_han,
                                          suppress_warnings=suppress_warnings)
     get_first_v_second_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                              unchanged_results_filename, first_v_second_filename, suppress_warnings=suppress_warnings)
     get_dec_flip_stats_and_rand(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
                                 unchanged_results_filename, dec_flip_stats_filename, rand_results_filename,
                                 suppress_warnings=suppress_warnings)
-    get_gradient_based_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                             unchanged_results_filename, grad_based_stats_filename, suppress_warnings=suppress_warnings)
+    get_gradient_and_gradmult_based_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                          unchanged_results_filename, grad_based_stats_filename,
+                                          grads_have_already_been_collected=False, function_of_grad='grad_and_gradmult',
+                                          suppress_warnings=suppress_warnings)
     get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
-                                       unchanged_results_filename, dec_flip_rand_nontop_stats_filename,
-                                       suppress_warnings=suppress_warnings)
-    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=suppress_warnings)
+                                       unchanged_results_filename, dec_flip_rand_nontopbyattn_stats_filename,
+                                       order_type='attn', suppress_warnings=suppress_warnings)
+    get_attn_div_from_unif_stats(attn_weight_filename, attn_div_from_unif_filename, suppress_warnings=suppress_warnings)"""
+
+    get_gradient_and_gradmult_based_stats(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                          unchanged_results_filename, gradsignmult_based_stats_filename,
+                                          grads_have_already_been_collected=True, function_of_grad='gradsignmult',
+                                          suppress_warnings=suppress_warnings)
+    get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                       unchanged_results_filename, dec_flip_rand_nontopbygrad_stats_filename,
+                                       order_type='grad', suppress_warnings=suppress_warnings)
+    get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                       unchanged_results_filename, dec_flip_rand_nontopbygradmult_stats_filename,
+                                       order_type='gradmult', suppress_warnings=suppress_warnings)
+    get_dec_flip_stats_for_rand_nontop(just_the_classifier, attn_weight_filename, corr_vector_dir, batch_size, gpu,
+                                       unchanged_results_filename, dec_flip_rand_nontopbygradsignmult_stats_filename,
+                                       order_type='gradsignmult', suppress_warnings=suppress_warnings)
 
 
 def main():
