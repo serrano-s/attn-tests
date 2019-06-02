@@ -516,7 +516,7 @@ def make_fracremoved_boxplots(filename, list_of_ordering_names, dataset_ordering
                      "Flip Occurred: " + model
         palette = {"Random": "#2589CC", "Attention": "#80D4FF", "Gradient": "#D4F3FF", "Attn * Grad": "#FFFFFF"}
     else:
-        plot_title = "Probability Masses of Original Attention Distributions Removed Before First Decision " +\
+        plot_title = "Probability Masses of Original Attention Distributions\nRemoved Before First Decision " +\
                      "Flip Occurred: " + model
         palette = {"Random": "#A970FF", "Attention": "#EEA8FF", "Gradient": "#FFE0FF", "Attn * Grad": "#FFFFFF"}
     title_of_each_graph = "Dataset"
