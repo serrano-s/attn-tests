@@ -1,4 +1,4 @@
-# Attention Tests
+# Attention Tests for Text Classification
 
 Required to run code:
 
@@ -14,7 +14,7 @@ Required to run code:
 - pandas
 - gensim
 
-This repo contains code to train and test various models for different
+This repo contains code to train and test various text classification models for different
 interpretability-related criteria.
 
 When you download the repo, open
