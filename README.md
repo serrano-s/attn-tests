@@ -3,10 +3,16 @@
 Required to run code:
 
 - python3 (I used python 3.6.3)
-- allennlp and all its dependencies
+- allennlp and all its dependencies (works with both 0.7.1 and 0.8.3)
 - numpy
+- scipy
 - matplotlib
 - seaborn
+- pytorch
+- tqdm
+- statsmodels
+- pandas
+- gensim
 
 This repo contains code to train and test various models for different
 interpretability-related criteria.
