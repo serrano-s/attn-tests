@@ -1,6 +1,8 @@
 from default_directories import tex_files_dir
 from default_directories import base_output_dir
 import os
+import sys
+sys.path.append('..')
 from process_test_outputs import load_in_data_table
 import numpy as np
 from test_model import first_v_second_fname

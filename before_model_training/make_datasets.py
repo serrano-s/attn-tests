@@ -7,8 +7,10 @@ one of the files, so we can process it from that one and discard it from the oth
 """
 
 import datetime
+import sys
+sys.path.append('..')
 import xml.etree.ElementTree as ElementTree
-from allennlp.data.dataset_readers.text_classification.textcat import TextCatReader
+from textcat import TextCatReader
 from allennlp.data.tokenizers import WordTokenizer
 from allennlp.data.tokenizers.word_filter import PassThroughWordFilter, StopwordFilter
 from tqdm import tqdm

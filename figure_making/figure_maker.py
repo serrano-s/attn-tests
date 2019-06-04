@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
 import os
+import sys
+sys.path.append('..')
 import seaborn as sns
 import pandas as pd
 from test_model import first_v_second_fname

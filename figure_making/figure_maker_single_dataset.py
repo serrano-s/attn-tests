@@ -1,9 +1,12 @@
+# I don't think I ever finished this file-- don't use it
 use_seaborn = False
 
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+import sys
+sys.path.append('..')
 matplotlib.use('Agg')
 import os
 if use_seaborn:

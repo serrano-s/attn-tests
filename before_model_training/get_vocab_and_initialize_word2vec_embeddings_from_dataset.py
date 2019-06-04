@@ -1,4 +1,8 @@
-from allennlp.data.dataset_readers.text_classification.textcat import TextCatReader
+import sys
+sys.path.append('..')
+from textcat import TextCatReader
+from default_directories import base_data_dir as data_dir
+from default_directories import vocabs_dir
 from gensim.models import Word2Vec
 import datetime
 import os
@@ -13,16 +17,20 @@ from tqdm import tqdm
 import resource
 import argparse
 
-filepaths_of_data_to_train_on = ['/homes/gws/sofias6/data/amazon_train.tsv',
-                                 '/homes/gws/sofias6/data/amazon_dev.tsv']
-dir_to_save_vocab_in = '/homes/gws/sofias6/vocabs/amazon-lowercase-vocab-30its/'
-allocate_extra_memory = False
-write_temp_file_of_all_provided_data_with_set_vocab = True
+if not os.path.isdir(vocabs_dir):
+    os.makedirs(vocabs_dir)
+
+filepaths_of_data_to_train_on = [data_dir + 'amazon_train.tsv',
+                                 data_dir + 'amazon_dev.tsv']
+dir_to_save_vocab_in = vocabs_dir + 'amazon-lowercase-vocab-30its/'
 lowercase_all_tokens = True
-embedding_file_tag = "_embeddings"
 min_word_count_to_avoid_unking = 5
 iterations_for_training_word_embeddings = 30
 word_embedding_dimension = 200
+
+allocate_extra_memory = False
+write_temp_file_of_all_provided_data_with_set_vocab = True
+embedding_file_tag = "_embeddings"
 vocabword_ind_file_ending = "_indstowords.txt"
 vocabword_ind_not_numbered_file_ending = "_indstowords_nonums.txt"
 label_ind_file_ending = "_indstolabels.txt"
