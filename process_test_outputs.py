@@ -165,6 +165,18 @@ def load_in_data_table(first_v_second_filename, dec_flip_stats_filename, rand_re
         unchanged = np.reshape(unchanged, (1, unchanged.shape[0]))
     if len(grad_stats.shape) == 1:
         grad_stats= np.reshape(grad_stats, (1, grad_stats.shape[0]))
+    if len(nontop_stats.shape) == 1:
+        nontop_stats = np.reshape(nontop_stats, (1, nontop_stats.shape[0]))
+    if len(attn_div_stats.shape) == 1:
+        attn_div_stats = np.reshape(attn_div_stats, (1, attn_div_stats.shape[0]))
+    if len(gradsignmult_stats.shape) == 1:
+        gradsignmult_stats = np.reshape(gradsignmult_stats, (1, gradsignmult_stats.shape[0]))
+    if len(nontop_by_grad_stats.shape) == 1:
+        nontop_by_grad_stats = np.reshape(nontop_by_grad_stats, (1, nontop_by_grad_stats.shape[0]))
+    if len(nontop_by_gradmult_stats.shape) == 1:
+        nontop_by_gradmult_stats = np.reshape(nontop_by_gradmult_stats, (1, nontop_by_gradmult_stats.shape[0]))
+    if len(nontop_by_gradsignmult_stats.shape) == 1:
+        nontop_by_gradsignmult_stats = np.reshape(nontop_by_gradsignmult_stats, (1, nontop_by_gradsignmult_stats.shape[0]))
 
     print("Checking that ID tags match up in records from each file before concatenating")
     assert first_v_second.shape[0] == dec_flip_stats.shape[0], str(first_v_second.shape) + ', ' + \
