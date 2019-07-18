@@ -620,7 +620,7 @@ def make_kljs_correlation_plot(comparing_to_remhighest, col_to_compare_to_diverg
                            filename, title, x_title=x_title, y_title=y_title)
 
 
-def zoomed_out_vs_random_tests(table, is_han):
+def zoomed_out_vs_random_tests(table, is_han, produce_figs):
     avg_rand = table[:, NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_START: NEEDED_REM_RAND_FRAC_X_FOR_DECFLIP_END + 1]
     assert np.all(avg_rand != 0)
     avg_rand = np.clip(avg_rand, a_min=0, a_max=None)
@@ -643,10 +643,11 @@ def zoomed_out_vs_random_tests(table, is_han):
     avg_random_js = np.sum(table[:, EXTRACTED_SINGLE_WEIGHT_JS_START: EXTRACTED_SINGLE_WEIGHT_JS_END + 1], axis=1) / \
                     (EXTRACTED_SINGLE_WEIGHT_JS_END - EXTRACTED_SINGLE_WEIGHT_JS_START + 1)
 
-    """make_kljs_correlation_plot(True, avg_random_js, avg_weight_sampled_for_extraction, "(avg) random weight",
-                               table, is_han)
-    make_kljs_correlation_plot(False, avg_random_js, avg_weight_sampled_for_extraction, "(avg) random weight",
-                               table, is_han)"""
+    """if produce_figs:
+        make_kljs_correlation_plot(True, avg_random_js, avg_weight_sampled_for_extraction, "(avg) random weight",
+                                   table, is_han)
+        make_kljs_correlation_plot(False, avg_random_js, avg_weight_sampled_for_extraction, "(avg) random weight",
+                                   table, is_han)"""
 
     #print(np.concatenate([np.reshape(avg_rand[from_bottom_mask], (np.sum(from_bottom_mask), 1)),
     #               np.reshape(rem_from_bottom[from_bottom_mask], (np.sum(from_bottom_mask), 1))], axis=1)[:40])
@@ -1007,7 +1008,13 @@ def main(constrain_to_guessed_label=None):
     parser.add_argument("--top-level-data-dir", type=str, required=False,
                         default=base_data_directory,
                         help='Top level dir containing data (some info will be written there)')
+    parser.add_argument("--produce-figs", type=str, required=False, default="False",
+                        help="Whether to produce figures as part of script")
     args = parser.parse_args()
+    if args.produce_figs.lower().startswith('t'):
+        produce_figs = True
+    else:
+        produce_figs = False
     if args.write_attnperf_labels.lower().startswith('t'):
         write_attnperf = True
     else:
@@ -1119,11 +1126,12 @@ def main(constrain_to_guessed_label=None):
     get_vs2nd_2x2_decflip_jointdist(table)
     print()
     get_default_class_info(table)
-    zoomed_out_vs_random_tests(table, is_han)
+    zoomed_out_vs_random_tests(table, is_han, produce_figs)
 
-    make_and_save_hist(table[:, ATTN_SEQ_LEN], dataset_output_directory + "num_sents_test_docs.png",
-                       title="Number of sentences in test docs",
-                       have_left_bin_edge_at=0, bin_size=1, make_log_scale=True)
+    if produce_figs:
+        make_and_save_hist(table[:, ATTN_SEQ_LEN], dataset_output_directory + "num_sents_test_docs.png",
+                           title="Number of sentences in test docs",
+                           have_left_bin_edge_at=0, bin_size=1, make_log_scale=True)
     coarse_grained_single_attn_weight_tests(True, table)
     fine_grained_single_attn_weight_tests(True, table)
     print()
