@@ -10,6 +10,7 @@ from attn_tests_lib import IntermediateBatchIterator, SimpleHanAttention
 from test_model import set_up_inorder_test_loader, get_batch_size_max_samples_per_batch_from_config_file
 from glob import glob
 import pickle
+from allennlp.common.util import import_submodules
 
 
 class SingleInstanceGenerator:
@@ -33,8 +34,12 @@ class SingleInstanceGenerator:
         return self.__iter__()
 
     def __iter__(self):
-        for batch in self.data_iter(self.data_reader._read(self.temp_fname), epoch_num=0, num_epochs=1, shuffle=False):
-            yield batch
+        try:
+            for batch in self.data_iter(self.data_reader._read(self.temp_fname), epoch_num=0, num_epochs=1, shuffle=False):
+                yield batch
+      	except:
+      	    for batch in self.data_iter(self.data_reader._read(self.temp_fname), num_epochs=1, shuffle=False):
+		        yield batch
 
 
 def load_testing_models_in_eval_mode_from_serialization_dir(s_dir,
@@ -318,6 +323,8 @@ def main():
                         default="/homes/gws/sofias6/attn-test-output/",
                         help="The dir containing the saved model attn test results (for pulling out gradients)")
     args = parser.parse_args()
+    import_submodules('textcat')
+    import_submodules('attn_tests_lib')
     is_han = ('-han' in args.model_folder_name)
     if is_han:
         attn_layer_to_replace = "_sentence_attention"
